@@ -662,7 +662,7 @@ public sealed class DeviceReconnectPolicy;                  // exponential backo
 
 **Discovery.** `SerialPort.GetPortNames()` gives no VID/PID, so use a CIM/WMI query over `Win32_PnPEntity` to enumerate ports with hardware IDs. Filter to the board's USB descriptor, then probe by writing a `hello` frame and waiting 500 ms for a reply. Cache the last-good port in settings and try it first. Because the protocol identifies the device in its `hello` response, probing works for any supported board without a per-board VID/PID table.
 
-> **Verify during the hardware spike:** Elecrow's CrowPanel boards typically expose USB-C through a CH34x-class USB-UART bridge rather than the ESP32-S3's native USB. This changes the VID/PID filter and whether baud rate is meaningful. Discovery must fall back to probing every candidate port if the filter matches nothing.
+> **Resolved during the hardware spike — see F4 in §9.6.** The board does *not* use a CH34x bridge. It exposes the ESP32-S3's native USB-Serial/JTAG peripheral and enumerates as `VID_303A&PID_1001`. Filter on that. Baud rate is meaningless over a virtual CDC port, so `SerialPortTransport` may set any value. Retain the probe-every-candidate-port fallback regardless: it is what makes discovery work for board ports that *do* use a bridge.
 
 ### 6.1 Wire protocol
 
@@ -1030,6 +1030,8 @@ Two properties of EIM worth recording, because they shape how the firmware build
 
 **Host prerequisite: USB-UART bridge drivers.** Windows ships no CH34x driver inbox, and §6 expects the CrowPanel to present a CH34x-class bridge rather than the ESP32-S3's native USB. Without the driver the board enumerates as an unknown device and never appears as a COM port, which fails both flashing and `SerialPortTransport`. `eim install-drivers` (or the equivalent button in the EIM GUI) installs the CP210x, CH34x and FTDI drivers in one step; it is machine-level and idempotent. Run it before the first board is plugged in, and record the port inventory beforehand — the new port that appears on connect is the panel, and its VID/PID settles the open question in §6 about which bridge Elecrow fitted.
 
+> **Superseded for this board — see F4 in §9.6.** The reference CrowPanel enumerated inbox on Windows with no driver installed, because Elecrow wired USB-C to the ESP32-S3's native USB rather than a bridge. `eim install-drivers` remains worth running once on a development machine — board ports on other hardware, and any CP210x/CH34x programming adapter, still need it — but it is not a prerequisite for the CrowPanel.
+
 Tasks:
 
 | Task | Core | Responsibility |
@@ -1069,6 +1071,62 @@ The firmware implements the three `PageLayout` variants and nothing else. It rec
 
 The RGB-parallel panel with its framebuffer in PSRAM is the configuration where Wi-Fi contention causes tearing, which is the practical argument behind the serial-first decision in D2.
 
+### 9.6 Toolchain findings from the first build
+
+Validated on the reference machine against **ESP-IDF v6.1** (EIM, `C:\esp\v6.1\esp-idf`) by configuring and building the stock `hello_world` example for `esp32s3`, probing the panel with `esptool chip-id`, and adding `lvgl/lvgl` as a managed dependency. Five findings change decisions elsewhere in this document.
+
+**The stock `sdkconfig` is wrong for this board in four places.** A freshly generated `sdkconfig` is 2,325 lines, essentially all defaults. `sdkconfig.defaults.crowpanel_21` carries only the deltas:
+
+| Setting | IDF default | CrowPanel value | Reason |
+|---|---|---|---|
+| `CONFIG_ESPTOOLPY_FLASHSIZE` | `"2MB"` | `"16MB"` | §9.5 |
+| `CONFIG_PARTITION_TABLE_*` | `SINGLE_APP` | custom, two OTA slots | §6.3 |
+| `CONFIG_SPIRAM` | absent (disabled) | enabled, octal mode | see framebuffer note below |
+| `CONFIG_FREERTOS_HZ` | `100` | `1000` | see tick-rate note below |
+
+**F1 — The FreeRTOS tick rate must be raised to 1 kHz.** IDF defaults to `CONFIG_FREERTOS_HZ=100`, a 10 ms tick. `vTaskDelay` cannot express a shorter interval than one tick, so the 5 ms `lv_timer_handler()` period in §9.3 silently becomes 10 ms — halving the UI refresh rate with no error and no warning. Setting `CONFIG_FREERTOS_HZ=1000` is standard practice for LVGL projects and belongs in both `sdkconfig.defaults` files, not just the CrowPanel one. The 20 ms `input_task` poll is unaffected either way.
+
+**F2 — The debug console and the link may be contending for UART0.** IDF defaults to `CONFIG_ESP_CONSOLE_UART_DEFAULT`, which routes `printf` and the whole `ESP_LOG` family to UART0. §6 expects the CrowPanel to expose USB-C through a CH34x-class bridge; if that bridge is wired to UART0, then every log line the firmware emits is injected into the same byte stream as the NDJSON protocol frames. The failure presents as intermittent frame-parse errors on the host that correlate with nothing the host did, which is an expensive thing to debug from the C# side.
+
+> **Narrowed by F4, not eliminated.** There is no bridge and no UART0 involvement, so the collision moves rather than disappears: USB-Serial/JTAG presents a *single* CDC endpoint, and routing both the console (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`) and the Crowsnest link through it interleaves log lines with NDJSON frames on the same wire. Three viable resolutions — console out to UART0 physical pins and read with a TTL adapter; a TinyUSB composite device exposing two CDC interfaces; or logging compiled out of release builds with `CONFIG_LOG_DEFAULT_LEVEL_NONE`. Decide before `crowsnest_link` is written; it is a config change now and a protocol-level mystery later.
+
+**F3 — The firmware tree cannot live under the user profile on Windows.** Windows caps a full path at 260 characters, and the IDF build tree is deep — `build/esp-idf/<component>/CMakeFiles/__idf_<component>.dir/...`. Building `hello_world`, the smallest project that exists, from a path 118 characters long produced a CMake warning that object files were landing 199 characters in against a 250-character ceiling. The real firmware — LVGL 9, a generated BSP component, and nested component build directories — has a substantially deeper tree and less headroom.
+
+The repository therefore moves out of the OneDrive profile path to a short root at `C:\projects\crowsnest`, with the firmware at `C:\projects\crowsnest\firmware\crowsnest-display`. Git is the backup mechanism; OneDrive sync was never appropriate for a tree that generates hundreds of megabytes of build output. This is a prerequisite for Phase 3, not a preference.
+
+**F4 — The board uses native USB-Serial/JTAG, not a CH34x bridge.** `esptool chip-id` against the reference panel reports:
+
+```
+Chip type:   ESP32-S3 (QFN56) (revision v0.2)
+Features:    Wi-Fi, BT 5 (LE), Dual Core + LP Core, 240MHz, Embedded PSRAM 8MB (AP_3v3)
+USB mode:    USB-Serial/JTAG
+MAC:         a4:cb:8f:dc:cc:6c
+```
+
+Windows enumerated it as `USB\VID_303A&PID_1001` with no driver installed — `303A` being Espressif's own vendor ID, against `1A86:7523` for a CH34x. Embedded 8 MB PSRAM confirms the `ESP32-S3R8` part in §9.5, and the MAC is the eFuse address §5 uses to identify panels. Consequences: the §6 discovery filter is `VID_303A&PID_1001`; baud rate is meaningless over a virtual CDC port; the driver prerequisite in §9.3 does not apply to this board; and F2 relocates from UART0 to the USB CDC endpoint.
+
+**F5 — Component downloads fail on a cold CDN edge, and the manager does not retry.** Adding `lvgl/lvgl: ^9.0.0` to a manifest failed twice with `ERROR: Cannot download component lvgl/lvgl@9.6.0~1. ('Connection broken:`. The cause is not local: no proxy is configured, and the registry API answered 200 in 1.6 s throughout. The LVGL package is **110 MB**, and it was cold in the nearest CloudFront edge — the first request carried `X-Cache: Miss from cloudfront`. On a miss CloudFront streams from the S3 origin while filling its cache, which measured 840 KB/s here, and the connection was severed 5.5 MB in. The IDF Component Manager performs **no retry and no range-resume**, so a single dropped connection fails the whole configure step.
+
+Completing the transfer once with `curl -C - --retry` warmed the edge; subsequent requests returned `X-Cache: Hit from cloudfront` at 8 MB/s, and an unaided `idf.py reconfigure` then downloaded and extracted the component normally. Expect this on any fresh machine, any CI runner, and any new region — `esp-bsp` and the LVGL port are in the same size class.
+
+Three rules follow:
+
+- **Retry before investigating.** A failed fetch partially warms the edge, so a second `idf.py build` frequently succeeds unaided. This one would have.
+- **Commit `dependencies.lock`; ignore `managed_components/`.** The lock pins exact resolved versions so a CI runner builds what the developer built. The directory it populates is 201 MB for LVGL alone and must never enter the repository.
+- **Keep a manual recovery path.** Verified working, and the answer for an offline or air-gapped build:
+
+```bash
+# 1. fetch the archive with resume enabled (url is in dependencies.lock)
+curl -C - --retry 40 --retry-all-errors -o lvgl.zip   https://components-file.espressif.com/components/lvgl/lvgl/<ver>/<file>.zip
+# 2. extract to managed_components/<namespace>__<name>/
+# 3. write the component_hash from dependencies.lock into .component_hash
+printf '<hash-from-dependencies.lock>' > managed_components/lvgl__lvgl/.component_hash
+```
+
+The manager validates the extracted tree against `.component_hash` and, on a match, skips the download entirely.
+
+**Framebuffer arithmetic, for the record.** A 480×480 RGB565 framebuffer is 460,800 bytes. The ESP32-S3 has 512 KB of internal SRAM in total, shared between framebuffers, task stacks, the LVGL heap and the link buffers. A single framebuffer does not fit, let alone the double-buffering an RGB-parallel panel wants. The framebuffer must be allocated from the 8 MB PSRAM, which is what makes the Wi-Fi bandwidth contention in §9.5 a structural property of this board rather than a tuning problem — and therefore what makes D2's serial-first decision a memory-bandwidth argument as much as a latency one.
+
 ## 10. Design patterns in use
 
 | Pattern | Where | Why |
@@ -1101,7 +1159,29 @@ The RGB-parallel panel with its framebuffer in PSRAM is the configuration where 
 | Architecture | NetArchTest or similar: `Domain/` and `Application/` must not reference `Panels/`; no `Panels/X` may reference `Panels/Y` |
 | Protocol codec | Round-trip tests plus a fuzz test against truncated frames, split frames, garbage bytes, and unknown message types |
 | `Crowsnest.SimConnect` | Not unit-testable. `tools/Crowsnest.DevConsole` is the manual harness; keep it in the repo |
-| Firmware | `tools/Crowsnest.DeviceSimulator` speaks the device protocol from a desktop app, so the PC side is fully developable before firmware exists — and the real device can be swapped in to isolate which side broke |
+| Firmware | `tools/Crowsnest.DeviceSimulator` speaks the device protocol from a desktop app, so the PC side is fully developable before firmware exists — and the real device can be swapped in to isolate which side broke. The firmware's own test strategy is §11.1 |
+
+
+### 11.1 Firmware testing
+
+The argument in the table above stops at the C# boundary, which leaves the firmware as the one tier with no automated coverage. ESP-IDF supplies the missing pieces; they are worth adopting from the first commit rather than retrofitting.
+
+**Three tiers, split by what actually needs silicon.**
+
+| Tier | Mechanism | Covers |
+|---|---|---|
+| **Host unit tests** | Unity on the IDF `linux` target | `crowsnest_link` in full; any logic in `crowsnest_ui` that is not an LVGL call |
+| **Hardware smoke test** | `pytest-embedded` (`dut.expect`) | Boot, `hello` handshake, one rendered frame |
+| **Manual** | `idf.py monitor` + `Crowsnest.DeviceSimulator` | Encoder feel, panel init, latency |
+
+**`crowsnest_link` is pure logic and belongs entirely in tier one.** Framing, NDJSON parse, the `hello` handshake and the outbound event encoder touch no peripheral. ESP-IDF ships `components/unity/port/linux`, so a `linux`-target build compiles these as an ordinary native binary and runs them in milliseconds. This is the firmware mirror of the `Protocol codec` row above, and the two should **share one corpus of malformed frames** committed to the repository — truncated frames, split frames, garbage bytes, unknown message types — exercised by the C# fuzz test and the Unity host test alike. A protocol defect that only one end rejects is precisely the bug this arrangement catches.
+
+> **Windows constraint:** the IDF `linux` target requires POSIX APIs and does not build natively on Windows. Host tests run under WSL. This is the only part of the firmware toolchain that does, and it is a reason to keep `crowsnest_link` free of IDF dependencies beyond `esp_err_t` — the less it needs, the more portable its test harness.
+
+**What cannot be host-tested, and should not be faked.** `crowsnest_input` is the PCNT peripheral and an I²C expander read; `bsp_crowpanel_21_rotary` is a panel init sequence and RGB timings. Mocking either tests the mock. These are covered by the tier-two smoke test and by hand — which is acceptable precisely because they are the two components a board port is expected to replace anyway.
+
+**The smoke test earns its place at the OTA boundary.** A `pytest-embedded` test that flashes a build, waits for the `hello` frame and asserts on `DeviceCapabilities` is the cheapest possible guard against shipping an image that boots but never speaks. Given §6.3 pushes firmware over the same link the test uses, that guard runs against the exact path a user's update takes.
+
 
 ---
 
