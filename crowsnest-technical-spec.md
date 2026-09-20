@@ -138,7 +138,7 @@ Crowsnest.sln
 │   ├── Crowsnest.Tray/            net10.0-windows WPF  — → Host  (entry point)
 │   └── Crowsnest.Installer/       WiX v5
 ├── firmware/
-│   └── crowsnest-display/         ESP-IDF 5.x + LVGL 9
+│   └── crowsnest-display/         ESP-IDF 6.1 + LVGL 9
 ├── tools/
 │   ├── Crowsnest.DevConsole/      manual SimConnect harness
 │   └── Crowsnest.DeviceSimulator/ speaks the device protocol, no hardware needed
@@ -1021,6 +1021,15 @@ firmware/crowsnest-display/
 
 **A board port is three artefacts:** one BSP component, one input shim, one sdkconfig defaults file. `crowsnest_link` and `crowsnest_ui` never change. That is the deliverable that makes "other people can use other rotary ESP32 dials" real rather than aspirational.
 
+**Toolchain: ESP-IDF 6.1**, installed via the ESP-IDF Installation Manager (EIM). esp-bsp's compatibility table covers IDF 5.2 through 6.1 inclusive, so the BSP Generator route is unaffected by taking the current release rather than the 5.x line.
+
+Two properties of EIM worth recording, because they shape how the firmware build is documented for anyone else picking this up:
+
+- **The install is machine-level, not per-project.** EIM places each IDF version under a base path — `C:\esp\v6.1\esp-idf` on the reference machine, `C:\Espressif` being the tool's default — and registers it in `eim_idf.json`. Nothing lands in the repo, and there is no project-scoped install mode. A checkout therefore cannot carry its own toolchain; the version is a documented prerequisite, not a committed one.
+- **Version selection is per-shell.** `eim select` sets the active version, `eim shell` opens a shell with one activated, and `eim run` executes a single command in that context. Multiple IDF versions coexist, so pinning to 6.1 does not foreclose testing a board port against an older line. `eim install --config-file-save-path <file>` writes a replayable install configuration — worth committing once the firmware tree exists, as the closest thing to a reproducible toolchain spec.
+
+**Host prerequisite: USB-UART bridge drivers.** Windows ships no CH34x driver inbox, and §6 expects the CrowPanel to present a CH34x-class bridge rather than the ESP32-S3's native USB. Without the driver the board enumerates as an unknown device and never appears as a COM port, which fails both flashing and `SerialPortTransport`. `eim install-drivers` (or the equivalent button in the EIM GUI) installs the CP210x, CH34x and FTDI drivers in one step; it is machine-level and idempotent. Run it before the first board is plugged in, and record the port inventory beforehand — the new port that appears on connect is the panel, and its VID/PID settles the open question in §6 about which bridge Elecrow fitted.
+
 Tasks:
 
 | Task | Core | Responsibility |
@@ -1126,6 +1135,16 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 | **7 — Portability** | Second board port + Wi-Fi transport | A board Crowsnest was not designed against runs the unmodified `crowsnest_ui` |
 
 Phase 0 exists because all four of the project's real unknowns are in it. Phase 5 is deliberately positioned as a **test of the architecture** rather than just a feature: if adding NAV 1 is not nearly free, that is worth knowing before the autopilot work starts.
+
+**Phase 0 prerequisites.** Three machine-level installs gate the spikes, none of them project-scoped, all worth doing before the week starts rather than during it:
+
+| Prerequisite | Gates | Note |
+|---|---|---|
+| **MSFS 2024 SDK** | 0(a) | Provides `SimConnect.dll` (native, x64) and `Microsoft.FlightSimulator.SimConnect.dll` (managed wrapper) under `%MSFS2024_SDK%\SimConnect SDK\lib\`. Vendor both into the repo rather than referencing the SDK path, so the build is not machine-specific |
+| **ESP-IDF 6.1 via EIM** | 0(b), 0(d) | See §9.3. Machine-level; the repo carries the install configuration, not the toolchain |
+| **USB-UART bridge drivers** | 0(b), 0(c) | `eim install-drivers`. **This is the one that silently blocks the hardware spikes** — with no CH34x driver the panel does not enumerate as a COM port, and the failure looks like a dead board rather than a missing driver. Do it before first plug-in |
+
+The driver step is called out separately because it is the only prerequisite whose absence produces a misleading symptom. The other two fail loudly at build time.
 
 ## 14. Risk register
 
