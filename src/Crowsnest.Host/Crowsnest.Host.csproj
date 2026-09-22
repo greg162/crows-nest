@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crowsnest.Core\Crowsnest.Core.csproj" />
+    <ProjectReference Include="..\Crowsnest.Sim\Crowsnest.Sim.csproj" />
+    <ProjectReference Include="..\Crowsnest.Device\Crowsnest.Device.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+## IDF Component Manager manifest.
+##
+## dependencies.lock is committed and managed_components/ is gitignored (spec §9.6 F5):
+## the lock pins exactly what the developer built so a CI runner builds the same thing,
+## while the directory it populates is 201 MB for LVGL alone.
+##
+## Expect the first fetch on a fresh machine to fail once. LVGL is 110 MB and the IDF
+## Component Manager does no retry and no range-resume, so a cold CloudFront edge drops
+## the connection partway through. Simply run the build again — the failed attempt warms
+## the edge. The manual curl recovery path is in §9.6 F5.
+dependencies:
+  idf:
+    version: ">=5.3"
+  lvgl/lvgl:
+    version: "^9.2.0"
+  espressif/esp_lvgl_port:
+    version: "^2.4.0"

@@ -1,0 +1,46 @@
+# Malformed protocol frames, one per line (# and blank lines are comments).
+#
+# Shared corpus (spec §11, §11.1). The C# fuzz test in Crowsnest.Device.Tests and the
+# firmware's Unity host test for crowsnest_link both read this file. Every line here must
+# be REJECTED OR IGNORED by both ends without throwing, aborting or wedging the link —
+# a frame only one end rejects is exactly the defect this arrangement exists to catch.
+#
+# Add a line whenever a real link produces something surprising. Never remove one.
+
+# --- not JSON at all ---
+not json at all
+ESP-ROM:esp32s3-20210327
+I (312) crowsnest: boot complete
+�����
+# --- truncated / unbalanced ---
+{"v":2,"t":"hello"
+{"v":2,"t":
+{"v":2,"t":"state","fields":[{"role":"primary"
+}
+{{"v":2}
+# --- valid JSON, wrong shape ---
+[]
+null
+true
+42
+"hello"
+{}
+{"v":2}
+# --- known type, missing required members ---
+{"v":2,"t":"hello","dev":"crowpanel-2.1-rotary"}
+{"v":2,"t":"state","rev":1}
+# --- known type, wrong member types ---
+{"v":2,"t":"input","seq":"not-a-number","ev":"encoder"}
+{"v":2,"t":"input","seq":1,"ev":"encoder","d":"three"}
+{"v":2,"t":"pong","ts":"soon"}
+{"v":2,"t":"hello","dev":"x","fw":"1.0.0","id":"abc","caps":[]}
+# --- unknown message type: ignored, never an error ---
+{"v":2,"t":"telemetry","cpu":42}
+{"v":2,"t":"ota_status","state":"writing","pct":42}
+# --- unknown event and direction: ignored, never an error ---
+{"v":2,"t":"input","seq":1,"ev":"nonsense"}
+{"v":2,"t":"input","seq":1,"ev":"swipe","dir":"sideways"}
+# --- unknown fields alongside known ones: must still decode ---
+{"v":2,"t":"pong","ts":918273,"jitter":4,"nested":{"a":[1,2,3]}}
+# --- a future protocol version: decoded, not rejected (spec §6.1) ---
+{"v":9,"t":"pong","ts":1}

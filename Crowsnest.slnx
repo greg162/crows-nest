@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Crowsnest.Core/Crowsnest.Core.csproj" />
+    <Project Path="src/Crowsnest.Device/Crowsnest.Device.csproj" />
+    <Project Path="src/Crowsnest.Host/Crowsnest.Host.csproj" />
+    <Project Path="src/Crowsnest.Sim/Crowsnest.Sim.csproj" />
+    <Project Path="src/Crowsnest.SimConnect/Crowsnest.SimConnect.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Crowsnest.Core.Tests/Crowsnest.Core.Tests.csproj" />
+    <Project Path="tests/Crowsnest.Device.Tests/Crowsnest.Device.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Crowsnest.DevConsole/Crowsnest.DevConsole.csproj" />
+    <Project Path="tools/Crowsnest.DeviceSimulator/Crowsnest.DeviceSimulator.csproj" />
+    <Project Path="tools/Crowsnest.LinkSpike/Crowsnest.LinkSpike.csproj" />
+  </Folder>
+</Solution>

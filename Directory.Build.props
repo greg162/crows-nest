@@ -1,0 +1,32 @@
+<Project>
+
+  <!-- Settings shared by every project. Target frameworks stay per-project:
+       Crowsnest.Core is net10.0 (BCL only, spec s4 dependency rule), the rest
+       are net10.0-windows. -->
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!-- SimConnect's native DLL is x64 (spec s2 A6, s7.2). Nothing here ever
+       runs as AnyCPU or x86. -->
+  <PropertyGroup>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier Condition="'$(OutputType)' == 'Exe'">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>Crowsnest</Product>
+    <Company>Crowsnest</Company>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

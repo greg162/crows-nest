@@ -1,0 +1,9 @@
+# Development-only overlay: puts the console back on the USB CDC endpoint so
+# `idf.py monitor` works over the one cable.
+#
+# This deliberately re-creates the F2 collision — log lines interleave with NDJSON frames
+# on the same endpoint — so use it for panel bring-up, never while debugging the link.
+#
+#   idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.crowpanel_21;sdkconfig.defaults.devconsole" build
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

@@ -1,0 +1,40 @@
+# Shared by every board port. Board-specific deltas live in sdkconfig.defaults.<board>.
+# Only the deltas from IDF's defaults belong here — a generated sdkconfig is 2,325 lines
+# of almost entirely defaults and is deliberately gitignored (spec §9.6).
+
+# --- F1: the FreeRTOS tick rate must be 1 kHz ------------------------------------------
+# vTaskDelay cannot express less than one tick. At the IDF default of 100 Hz the 5 ms
+# lv_timer_handler() period in §9.3 silently becomes 10 ms, halving the UI refresh rate
+# with no error and no warning. This belongs in EVERY board's build, not just the
+# CrowPanel's, which is why it sits here.
+CONFIG_FREERTOS_HZ=1000
+
+# --- F2: the console must not share the link's byte stream -----------------------------
+# Resolution chosen for Crowsnest: the console goes out physical UART0 pins and the
+# Crowsnest link owns the USB CDC endpoint exclusively.
+#
+# SECONDARY_NONE is the part that is easy to miss. IDF enables a secondary USB-Serial/JTAG
+# console by default when the primary is UART, which would put log lines back onto the
+# same endpoint as the NDJSON frames — exactly the interleaving F2 warns about, restored
+# by a default nobody set on purpose. The symptom would be intermittent frame-parse errors
+# on the host that correlate with nothing the host did.
+#
+# Consequence for development: `idf.py monitor` over USB shows nothing. Read the console
+# with a 3.3 V TTL adapter on the UART0 header, or build with
+# `-DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.crowpanel_21;sdkconfig.defaults.devconsole"`.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# --- LVGL 9 ----------------------------------------------------------------------------
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_USE_PERF_MONITOR=n
+# Font subsetting keeps a large numeral set cheap (spec §9.4). 48 px is the tuning digits;
+# 28 px labels; 14 px page furniture.
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+CONFIG_LV_USE_LABEL=y
+CONFIG_LV_USE_ARC=y
+
+# --- Logging ---------------------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

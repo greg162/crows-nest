@@ -1,0 +1,34 @@
+# Elecrow CrowPanel 2.1" ESP32 Rotary Display — ESP32-S3R8 (spec §9.5).
+# Four settings where IDF's defaults are wrong for this board (spec §9.6).
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# 16 MB flash, not the 2 MB IDF assumes.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# Two OTA slots rather than SINGLE_APP, so updates over the link can roll back (spec §6.3).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 8 MB octal PSRAM. A single 480x480 RGB565 framebuffer is 460,800 bytes and the S3 has
+# 512 KB of internal SRAM in total, shared with task stacks, the LVGL heap and the link
+# buffers. The framebuffer cannot live in internal RAM, which is what makes the Wi-Fi
+# bandwidth contention in §9.5 structural rather than a tuning problem.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# The RGB peripheral fetches the framebuffer over the PSRAM bus; without this the panel
+# shows drifting bands under any other PSRAM traffic.
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+
+# Native USB-Serial/JTAG, not a CH34x bridge (spec §9.6 F4). This is the Crowsnest link.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED=n
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
