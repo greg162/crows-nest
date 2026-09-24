@@ -542,7 +542,9 @@ bool cn_link_parse(const char *json, size_t len, cn_msg_t *out)
 
     if (strcmp(s.type, "ping") == 0) {
         out->type = CN_MSG_PING;
-        out->as.ping.timestamp = (int32_t)s.timestamp;
+        /* s.timestamp is a double; every value the host can send (unix ms, Stopwatch
+         * ticks) is far below 2^53, so this round-trips exactly. */
+        out->as.ping.timestamp = (int64_t)s.timestamp;
         return true;
     }
 
@@ -667,11 +669,11 @@ int cn_link_encode_hello(char *out, size_t cap, const cn_hello_info_t *info)
         info->max_fields));
 }
 
-int cn_link_encode_pong(char *out, size_t cap, int32_t timestamp)
+int cn_link_encode_pong(char *out, size_t cap, int64_t timestamp)
 {
     return finish(out, cap, snprintf(
-        out, cap, "{\"v\":%d,\"t\":\"pong\",\"ts\":%ld}\n",
-        CN_PROTOCOL_VERSION, (long)timestamp));
+        out, cap, "{\"v\":%d,\"t\":\"pong\",\"ts\":%lld}\n",
+        CN_PROTOCOL_VERSION, (long long)timestamp));
 }
 
 int cn_link_encode_encoder(char *out, size_t cap, int32_t seq, int detents)

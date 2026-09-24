@@ -136,8 +136,19 @@ public sealed class PanelDeviceConnection : IPanelDevice
         try
         {
             await Writer.WriteAsync(new HostPing { Timestamp = stamp }, ct);
-            await pending.Task.WaitAsync(ct);
+
+            // Bounded on purpose. A pong is matched by the `ts` the device echoes, so a
+            // device that echoes anything else - truncating it, rounding it, inventing it -
+            // matches nothing here. Waiting unbounded turned that into a silent hang with
+            // no output and a live link; a timeout names the fault instead.
+            await pending.Task.WaitAsync(_options.PingTimeout, _time, ct);
             return _time.GetElapsedTime(stamp);
+        }
+        catch (TimeoutException)
+        {
+            throw new TimeoutException(
+                $"No pong matching ts={stamp} within {_options.PingTimeout.TotalMilliseconds:F0} ms. " +
+                "The device may be echoing a different ts than it was sent.");
         }
         finally
         {

@@ -11,6 +11,12 @@ public sealed record PanelConnectionOptions
 
     public TimeSpan PingInterval { get; init; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// How long a single <c>MeasureRoundTripAsync</c> waits for its matching pong. The
+    /// spec's budget is a 20 ms median, so this is only ever hit by a fault.
+    /// </summary>
+    public TimeSpan PingTimeout { get; init; } = TimeSpan.FromSeconds(1);
+
     /// <summary>Missed pongs before the link is declared faulted.</summary>
     public int MissedPongLimit { get; init; } = 3;
 

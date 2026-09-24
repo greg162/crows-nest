@@ -712,6 +712,7 @@ Protocol rules:
 - `ack` echoes the highest input `seq` the host has processed, letting the device detect dropped input.
 - `cursor` is a `[start, end)` character range into `text`.
 - `ping`/`pong` every 2 s; three missed pongs on either side triggers a reconnect.
+- `ts` is an **opaque 64-bit correlation token, not a time**. The host chooses the value, the device echoes it back unchanged in the `pong`, and the device never interprets, rescales or narrows it. The host matches a pong to its outstanding ping by that value alone, so a device that echoes anything else matches nothing. This is the contract a 32-bit `ts` in the panel firmware broke during first bring-up: the host keys its in-flight pings on `Stopwatch.GetTimestamp()`, which passes `INT32_MAX` a few minutes after boot, so every pong came back saturated at `2147483647` and the handshake completed but the first measurement never returned. Both ends carry this as a 64-bit integer. Every host-side wait on a pong is also bounded, so a device that gets this wrong surfaces as a named timeout rather than a silent hang on a link that still looks alive.
 - Unknown message types and unknown fields are ignored rather than treated as errors, so the two sides version independently.
 
 ### 6.2 Multiple panels

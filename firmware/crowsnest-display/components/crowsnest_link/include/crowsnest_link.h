@@ -95,7 +95,13 @@ typedef struct {
     union {
         cn_state_t state;
         struct {
-            int32_t timestamp;
+            /* An opaque correlation token the host chose, echoed back unchanged. Not
+             * seconds, and not ours to interpret. The host keys its in-flight pings on
+             * Stopwatch.GetTimestamp(), which passes INT32_MAX a few minutes after boot
+             * and grows with uptime, so narrowing this to 32 bits made every pong echo a
+             * value the host had never sent — it matched no pong and blocked forever.
+             * 64 bits, and never narrower. */
+            int64_t timestamp;
         } ping;
         struct {
             char kind[CN_LABEL_MAX * 2];
@@ -160,7 +166,7 @@ typedef struct {
  * length, or a negative value if it would not fit. None of them allocate.
  */
 int cn_link_encode_hello(char *out, size_t cap, const cn_hello_info_t *info);
-int cn_link_encode_pong(char *out, size_t cap, int32_t timestamp);
+int cn_link_encode_pong(char *out, size_t cap, int64_t timestamp);
 int cn_link_encode_encoder(char *out, size_t cap, int32_t seq, int detents);
 int cn_link_encode_press(char *out, size_t cap, int32_t seq, bool long_press);
 int cn_link_encode_tap(char *out, size_t cap, int32_t seq, int x, int y);

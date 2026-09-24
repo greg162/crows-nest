@@ -107,6 +107,49 @@ public class PanelDeviceConnectionTests
         await AwaitQuietly(panel);
     }
 
+    [Fact]
+    public async Task ARoundTripIsMeasuredAgainstADeviceThatEchoesTheTimestampFaithfully()
+    {
+        // MeasureRoundTripAsync keys on Stopwatch.GetTimestamp(), which is well past
+        // int.MaxValue on any machine that has been up a few minutes. The honest path
+        // must survive that, which is the whole point of `ts` being 64-bit on both ends.
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new FakePanel(deviceEnd);
+        Task panel = fake.RunAsync(CancellationToken.None);
+
+        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await device.ConnectAsync(CancellationToken.None);
+
+        TimeSpan elapsed = await device.MeasureRoundTripAsync(CancellationToken.None);
+
+        Assert.True(elapsed >= TimeSpan.Zero);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(panel);
+    }
+
+    [Fact]
+    public async Task ADeviceThatEchoesATruncatedTimestampTimesOutRatherThanHanging()
+    {
+        // The original defect: the panel narrowed `ts` to 32 bits, so no pong ever matched
+        // the key its ping was stored under and the await never completed. The link stayed
+        // up and the tool printed nothing, which is the worst possible way to fail.
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new FakePanel(deviceEnd) { SaturatePongTimestampToInt32 = true };
+        Task panel = fake.RunAsync(CancellationToken.None);
+
+        await using var device = new PanelDeviceConnection(
+            hostEnd,
+            FastHandshake with { PingTimeout = TimeSpan.FromMilliseconds(200) });
+        await device.ConnectAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => device.MeasureRoundTripAsync(CancellationToken.None));
+
+        await device.DisposeAsync();
+        await AwaitQuietly(panel);
+    }
+
     private static async Task<DeviceInputEvent> FirstInputAsync(PanelDeviceConnection device)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -142,6 +185,9 @@ public class PanelDeviceConnectionTests
             System.Threading.Channels.Channel.CreateUnbounded<HostState>();
 
         private long _sequence;
+
+        /// <summary>Reproduces the first-bring-up firmware bug for the regression tests.</summary>
+        public bool SaturatePongTimestampToInt32 { get; set; }
 
         public async Task RunAsync(CancellationToken ct)
         {
@@ -180,7 +226,17 @@ public class PanelDeviceConnectionTests
                         break;
 
                     case HostPing ping:
-                        await _writer.WriteAsync(new DevicePong { Timestamp = ping.Timestamp }, ct);
+                        // Saturating here is exactly what the panel firmware did while `ts`
+                        // was an int32_t: the double->int32 cast pinned every real host
+                        // timestamp to int.MaxValue.
+                        await _writer.WriteAsync(
+                            new DevicePong
+                            {
+                                Timestamp = SaturatePongTimestampToInt32
+                                    ? Math.Min(ping.Timestamp, int.MaxValue)
+                                    : ping.Timestamp,
+                            },
+                            ct);
                         break;
 
                     case HostState state:
