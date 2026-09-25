@@ -9,7 +9,7 @@ using Microsoft.FlightSimulator.SimConnect;
 //
 // Runs a self-test first (write a standby frequency, time the read-back, restore the
 // original), then takes commands until Ctrl+C:
-//   s 122.800   set standby     x   swap active/standby     q   quit
+//   s 122.800   set standby     x   swap active/standby     m   toggle 25 / 8.33 kHz     q   quit
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -88,6 +88,7 @@ internal enum ClientEvent
 {
     Com1StandbySetHz,
     Com1Swap,
+    Com1SpacingToggle,
 }
 
 internal enum Group
@@ -100,6 +101,7 @@ internal struct Com1Data
 {
     public double ActiveHz;
     public double StandbyHz;
+    public double SpacingMode; // 0 = 25 kHz, 1 = 8.33 kHz
 }
 
 internal sealed class Session(SimConnect sim)
@@ -146,12 +148,15 @@ internal sealed class Session(SimConnect sim)
 
         sim.AddToDataDefinition(Definition.Com1, "COM ACTIVE FREQUENCY:1", "Hz", SIMCONNECT_DATATYPE.FLOAT64, 0, SimConnect.SIMCONNECT_UNUSED);
         sim.AddToDataDefinition(Definition.Com1, "COM STANDBY FREQUENCY:1", "Hz", SIMCONNECT_DATATYPE.FLOAT64, 0, SimConnect.SIMCONNECT_UNUSED);
+        sim.AddToDataDefinition(Definition.Com1, "COM SPACING MODE:1", "Enum", SIMCONNECT_DATATYPE.FLOAT64, 0, SimConnect.SIMCONNECT_UNUSED);
         sim.RegisterDataDefineStruct<Com1Data>(Definition.Com1);
 
         sim.MapClientEventToSimEvent(ClientEvent.Com1StandbySetHz, "COM_STBY_RADIO_SET_HZ");
         sim.MapClientEventToSimEvent(ClientEvent.Com1Swap, "COM_STBY_RADIO_SWAP");
         sim.AddClientEventToNotificationGroup(Group.Radios, ClientEvent.Com1StandbySetHz, false);
         sim.AddClientEventToNotificationGroup(Group.Radios, ClientEvent.Com1Swap, false);
+        sim.MapClientEventToSimEvent(ClientEvent.Com1SpacingToggle, "COM_1_SPACING_MODE_SWITCH");
+        sim.AddClientEventToNotificationGroup(Group.Radios, ClientEvent.Com1SpacingToggle, false);
         sim.SetNotificationGroupPriority(Group.Radios, SimConnect.SIMCONNECT_GROUP_PRIORITY_HIGHEST);
 
         // Every visual frame, but only when a value actually changed.
@@ -188,6 +193,10 @@ internal sealed class Session(SimConnect sim)
                 sim.TransmitClientEvent(UserObject, ClientEvent.Com1Swap, 0, Group.Radios, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
                 Console.WriteLine("  -> swap");
                 break;
+            case ["m"]:
+                sim.TransmitClientEvent(UserObject, ClientEvent.Com1SpacingToggle, 0, Group.Radios, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+                Console.WriteLine("  -> toggle spacing mode");
+                break;
             case []:
                 break;
             default:
@@ -199,7 +208,10 @@ internal sealed class Session(SimConnect sim)
     private void OnCom1(Com1Data data)
     {
         double ms = _writeClock.Elapsed.TotalMilliseconds;
-        Console.WriteLine($"COM1  active {Mhz(data.ActiveHz)}   standby {Mhz(data.StandbyHz)}");
+        // Raw Hz as well: the open question is whether 8.33 channels arrive by name
+        // (118005000) or by true frequency (118008333).
+        string spacing = data.SpacingMode >= 0.5 ? "8.33" : "25";
+        Console.WriteLine($"COM1  active {Mhz(data.ActiveHz)}   standby {Mhz(data.StandbyHz)}   raw standby {data.StandbyHz:F0} Hz   spacing {spacing} kHz");
 
         switch (_test)
         {
@@ -253,5 +265,5 @@ internal sealed class Session(SimConnect sim)
     private static string Mhz(double hz) => (hz / 1_000_000).ToString("F3", CultureInfo.InvariantCulture);
 
     private static void PrintHelp() =>
-        Console.WriteLine("commands: s 122.800 (set standby)   x (swap)   q (quit). Turn the radio in the cockpit too; changes print here.");
+        Console.WriteLine("commands: s 122.800 (set standby)   x (swap)   m (toggle 25 / 8.33 kHz)   q (quit). Turn the radio in the cockpit too; changes print here.");
 }

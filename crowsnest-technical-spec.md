@@ -161,7 +161,8 @@ src/Crowsnest.Core/
 ├── Domain/                        — shared, panel-agnostic
 │   ├── ParameterId.cs
 │   ├── ComFrequency.cs
-│   ├── Grids/                     IValueGrid + the five implementations
+│   ├── CursorLevel.cs
+│   ├── Grids/                     IValueGrid + the grids two or more panels share
 │   ├── Formatting/                IValueFormatter + shared formatters
 │   └── Tuning/                    TuningSession, TuningOptions, acceleration
 │
@@ -176,6 +177,7 @@ src/Crowsnest.Core/
     ├── PanelCatalog.cs            the explicit registration list
     ├── Com/
     │   ├── ComPanelModule.cs      COM 1 + COM 2
+    │   ├── ComChannelGrid.cs      + ChannelSpacing; COM is its only user
     │   ├── ComFrequencyFormatter.cs
     │   ├── ComSpacingBehaviour.cs
     │   └── com.parameters.json    embedded resource
@@ -215,7 +217,6 @@ String keys rather than an enum, deliberately: parameters are defined in data (�
 
 ```csharp
 public enum CanonicalUnit { Kilohertz, Feet, Degrees, FeetPerMinute, Knots, Millibars, OctalCode }
-public enum ChannelSpacing { TwentyFiveKhz, EightPointThreeThree }
 public enum ValueSlot      { Active, Standby, Single }
 
 // Retained as a formatting/parsing helper used by the frequency grids and tests.
@@ -343,16 +344,32 @@ public interface IValueGrid
     int  Step(int from, int detents, CursorLevel cursor);
 }
 
-public sealed class ComChannelGrid   : IValueGrid;   // 8.33 / 25 kHz ICAO channel naming
+public sealed class ComChannelGrid   : IValueGrid;   // Panels/Com — 8.33 / 25 kHz ICAO channel naming
 public sealed class LinearGrid       : IValueGrid;   // NAV 50 kHz, AP altitude 100 ft
 public sealed class WrappingGrid     : IValueGrid;   // heading, course: 359 → 0
 public sealed class SignedLinearGrid : IValueGrid;   // vertical speed, ±100 fpm
-public sealed class DigitGrid        : IValueGrid;   // transponder: four independent octal digits
+public sealed class DigitGrid        : IValueGrid;   // Panels/Transponder — four independent octal digits
 ```
 
 `ComChannelGrid` is the v0.1 `ComChannelTable`, unchanged in behaviour: a precomputed ordered table of legal channels with index arithmetic for stepping. It is now one implementation among several rather than the centre of the design.
 
 The 8.33 kHz rule it encodes is unchanged and remains the subtlest thing in the codebase — within each 100 kHz block the legal fractions are `.000 .005 .010 .015 .025 .030 .035 .040 .050 .055 .060 .065 .075 .080 .085 .090`, with `.020 .045 .070 .095` omitted. NAV is far simpler: plain 50 kHz linear steps, which is why it gets `LinearGrid`.
+
+**Implemented 2026-09-24** in `Panels/Com/ComChannelGrid.cs`, with `ChannelSpacing` beside it. It lives in the COM module rather than `Domain/Grids/` by the §4.1 rule: only one panel uses it, and the module hands it to the registry through `PanelBuilder.AddGrid` (§5.8). `DigitGrid` goes to `Panels/Transponder/` for the same reason. The rule reduces to arithmetic: a kHz value is an 8.33 channel name when `khz % 25` is 0, 5, 10 or 15, and a 25 kHz channel when it is 0. The table exists for stepping, not for membership. A cursor whose `Step` is a whole-MHz multiple moves the MHz and keeps the fraction; any other `Step` counts channels. Exact snap ties go down.
+
+**Why the grid is ours rather than the sim's.** SimConnect offers relative events (`COM_RADIO_FRACT_INC` and friends) that would let the sim apply its own spacing. Rejected: every detent would wait on a sim frame before the panel could show it, which is fine on the reference machine and not on a laptop at 25 fps; relative writes are not idempotent, so a dropped or retried event drifts where an absolute write self-corrects; and the pending/confirmed model in §5.4 assumes absolute values. The panel steps locally from this grid and the sim confirms.
+
+**Choosing the spacing.** Follow the `COM SPACING MODE:n` SimVar (`Enum`: 0 = 25 kHz, 1 = 8.33), subscribed like any other value so a mid-flight toggle is followed, and rebuild the grid on every change. **The SimVar is the only evidence.** The sim does not police spacing (below), so a frequency it reports may be one we wrote, and says nothing about what the aircraft supports. **The host must therefore never write a channel that is illegal in the current mode** — the grid is the only guard there is. On a change to 25 kHz, expect the sim to snap standby itself; `ObserveSimValue` picks that up like any other external change. Log the mode in tray diagnostics.
+
+**Verified 2026-09-24** with `Crowsnest.SimSpike` in the Carenado C185 at a UK airport:
+
+- **The sim works in channel names, not true frequencies.** `COM_STBY_RADIO_SET_HZ 118005000` reads back as exactly `118005000` Hz. The gateway's conversion is `kHz × 1000` with no 8.33 mapping.
+- **`COM SPACING MODE:1` is honoured by a third-party aircraft**, and follows `COM_1_SPACING_MODE_SWITCH` in both directions. The C185 defaults to **25 kHz even at a UK airport** — spacing is the aircraft's choice, not the region's.
+- **The sim accepts off-spacing writes.** `118.005` written while in 25 kHz mode was stored and read back unchanged — no rejection, no snap. A wrong 8.33 guess is therefore *silent*, not surfaced by the settle timeout.
+- **Switching 8.33 → 25 kHz snaps standby in the sim**: `119.005` became `119.000`, matching `ComChannelGrid.Snap`.
+- **Values read during flight load are transient.** The spike was started before the flight finished loading. Its first samples showed a placeholder (active = standby = `124.850`) and spacing 8.33; about 24 s later the aircraft's own initialisation set active to `127.850` (passing through `134.380`) and spacing to 25 kHz, with no user input. The self-test's writes landed during that window and read back at 25–42 ms — **not comparable** to the 10–16 ms C172 figure; manual writes after load read back in 4.5–11 ms. **Rule for `Crowsnest.Sim` (§7.3): wait for the `SimStart` system event before writing anything or treating a value as confirmed,** because an aircraft's initialisation can overwrite a write made during load. Changes after that point need no special handling — they are external changes to `ObserveSimValue`, and a spacing change rebuilds the grid.
+
+Still open: study-level aircraft, and whether any aircraft reports 8.33 capability it does not actually have.
 
 **Roadmap coverage.** Everything planned is reachable with these five grids:
 
