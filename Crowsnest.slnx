@@ -14,5 +14,8 @@
     <Project Path="tools/Crowsnest.DevConsole/Crowsnest.DevConsole.csproj" />
     <Project Path="tools/Crowsnest.DeviceSimulator/Crowsnest.DeviceSimulator.csproj" />
     <Project Path="tools/Crowsnest.LinkSpike/Crowsnest.LinkSpike.csproj" />
+    <Project Path="tools/Crowsnest.SimSpike/Crowsnest.SimSpike.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
 </Solution>
