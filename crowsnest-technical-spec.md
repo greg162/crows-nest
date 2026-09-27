@@ -361,15 +361,33 @@ The 8.33 kHz rule it encodes is unchanged and remains the subtlest thing in the 
 
 **Choosing the spacing.** Follow the `COM SPACING MODE:n` SimVar (`Enum`: 0 = 25 kHz, 1 = 8.33), subscribed like any other value so a mid-flight toggle is followed, and rebuild the grid on every change. **The SimVar is the only evidence.** The sim does not police spacing (below), so a frequency it reports may be one we wrote, and says nothing about what the aircraft supports. **The host must therefore never write a channel that is illegal in the current mode** — the grid is the only guard there is. On a change to 25 kHz, expect the sim to snap standby itself; `ObserveSimValue` picks that up like any other external change. Log the mode in tray diagnostics.
 
-**Verified 2026-09-24** with `Crowsnest.SimSpike` in the Carenado C185 at a UK airport:
+**Verified 2026-09-24** with `Crowsnest.SimSpike` in the C185 at a UK airport (recorded at the time as the Carenado C185; the 2026-09-26 runs identify the C185 in use as the MSFS 2024 `microsoft_c185f_skywagon` package, probably the same aircraft):
 
 - **The sim works in channel names, not true frequencies.** `COM_STBY_RADIO_SET_HZ 118005000` reads back as exactly `118005000` Hz. The gateway's conversion is `kHz × 1000` with no 8.33 mapping.
 - **`COM SPACING MODE:1` is honoured by a third-party aircraft**, and follows `COM_1_SPACING_MODE_SWITCH` in both directions. The C185 defaults to **25 kHz even at a UK airport** — spacing is the aircraft's choice, not the region's.
 - **The sim accepts off-spacing writes.** `118.005` written while in 25 kHz mode was stored and read back unchanged — no rejection, no snap. A wrong 8.33 guess is therefore *silent*, not surfaced by the settle timeout.
-- **Switching 8.33 → 25 kHz snaps standby in the sim**: `119.005` became `119.000`, matching `ComChannelGrid.Snap`.
-- **Values read during flight load are transient.** The spike was started before the flight finished loading. Its first samples showed a placeholder (active = standby = `124.850`) and spacing 8.33; about 24 s later the aircraft's own initialisation set active to `127.850` (passing through `134.380`) and spacing to 25 kHz, with no user input. The self-test's writes landed during that window and read back at 25–42 ms — **not comparable** to the 10–16 ms C172 figure; manual writes after load read back in 4.5–11 ms. **Rule for `Crowsnest.Sim` (§7.3): wait for the `SimStart` system event before writing anything or treating a value as confirmed,** because an aircraft's initialisation can overwrite a write made during load. Changes after that point need no special handling — they are external changes to `ObserveSimValue`, and a spacing change rebuilds the grid.
+- **Switching 8.33 → 25 kHz snaps standby in the sim**: `119.005` became `119.000`, matching `ComChannelGrid.Snap`. 2026-09-26: it snaps **active** too (`118.505` → `118.500`), in all three aircraft tested.
+- **Values read during flight load are transient.** The spike was started before the flight finished loading. Its first samples showed a placeholder (active = standby = `124.850`) and spacing 8.33; about 24 s later the aircraft's own initialisation set active to `127.850` (passing through `134.380`) and spacing to 25 kHz, with no user input. The self-test's writes landed during that window and read back at 25–42 ms — **not comparable** to the 10–16 ms C172 figure; manual writes after load read back in 4.5–11 ms. ~~Rule: wait for `SimStart`~~ — **superseded 2026-09-26**: `SimStart` fires far too early in MSFS 2024. See the aircraft matrix below for the replacement rule.
 
-Still open: study-level aircraft, and whether any aircraft reports 8.33 capability it does not actually have.
+**Verified 2026-09-26 — aircraft matrix**, MSFS 2024 (SimConnect 12.2, build 282174), same UK airport, spike started at the main menu:
+
+| Aircraft | Package | Settled spacing | Unprompted COM1 changes after the flying camera | Self-test (write, swap ×2, toggle ×2, restore) | Read-back | 30 s hold |
+|---|---|---|---|---|---|---|
+| C185F Skywagon | `microsoft_c185f_skywagon` | 25 kHz | none (4 runs) | all pass | 7–41 ms | stable |
+| C172SP Classic | `asobo_c172sp` | 25 kHz | none | all pass | **54–586 ms** (see below) | stable |
+| iniBuilds L-1011-500 TriStar | `inibuilds-l1011` | 25 kHz | **one, 1.4 s after** | all pass | 38–72 ms; 8–32 ms by hand later | stable |
+
+Findings:
+
+- **`SimStart` is not a readiness signal.** It fires at the aircraft-selection screen, then again on each menu transition, 60–100 s before the pilot has control. `Sim` system state reads 1 at the main menu. `Pause_EX1` flags read 8 at the menu, go to 0 before the flight loads, and do not change at the Start Flight screen.
+- **`CAMERA STATE` is the signal.** Observed values: 32 / 35 menus and loading, 12 aircraft selection, 30 fly-in, **16 Start Flight screen**, **2 cockpit, 3 external, 4 showcase / add-on view**, 0 briefly on transitions. Camera 2 can flicker for ~80 ms between 16 and 3, so gate on the *current* value.
+- **The sim and the aircraft fight over COM1 active around the handover.** At camera 16 the sim sets active to `118.505` (every aircraft, likely a departure-airport frequency; unconfirmed). The C185 once replaced it with `127.850` 48 ms before camera 2; the TriStar flipped between the two four times, with its last write **1.4 s after** camera 2. The winner varies from run to run.
+- **Rule for `Crowsnest.Sim` (§7.3), replacing the `SimStart` rule:** write nothing and treat nothing as confirmed until `CAMERA STATE` is a flying view (2, 3, 4) **and** no unsolicited change has arrived for a quiet period (3 s passed in every run; the TriStar margin was 1.6 s, so use 5 s). After that, changes need no special handling: they are external changes to `ObserveSimValue`, and a spacing change rebuilds the grid.
+- **The sim writes off-grid values itself.** `118.505` is an 8.33-only channel, set while every aircraft was in 25 kHz mode. `ComChannelGrid` must accept a current value that is not on the grid, show it as it is, and snap only on the first detent.
+- **COM1 can read `0.000` / `0.000`** mid-load (TriStar). Treat 0 Hz as "no value", never as a frequency to confirm or step from.
+- **Latency is not uniform.** The C172's self-test, 3 s after handover, read back at 54–586 ms. Not yet re-tested once the sim has fully loaded; the TriStar's by-hand writes after its hold were 8–32 ms. The §5.4 settle timeout must allow at least 600 ms until this is understood.
+
+Still open: whether the TriStar's own cockpit radio display follows the SimVar writes (the SimVars and events work, but a study-level jet may draw its display from its own state); whether the C172's 500 ms read-back persists after full load; what 118.505 is; and whether any aircraft reports 8.33 capability it does not actually have. The iniBuilds TriStar is probably the best case for a study-level jet, since iniBuilds works closely with the MSFS team; PMDG / Fenix-class aircraft may behave worse.
 
 **Roadmap coverage.** Everything planned is reachable with these five grids:
 
