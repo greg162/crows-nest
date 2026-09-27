@@ -202,7 +202,7 @@ COM 1 is the first of perhaps fifteen things this panel will eventually control.
 
 They differ only in the details. So the domain models **parameters**, not radios.
 
-**The canonical unit rule.** Every parameter's value is a plain `int` in a canonical unit — kHz for frequencies, feet for altitude, degrees for heading, feet-per-minute for vertical speed, knots for airspeed, a packed octal integer for a squawk code. This is what makes the generalisation cheap: the `TuningSession` state machine, which is the hardest-won part of the design, needs **no changes at all**. It already operated on a single value with a pending/confirmed lifecycle. Only the value's *type* was too specific, and the fix is to stop having one.
+**The canonical unit rule.** Every parameter's value is a plain `int` in a canonical unit — kHz for frequencies, feet for altitude, degrees for heading, feet-per-minute for vertical speed, knots for airspeed, the code as it reads for a squawk (7700 is the int 7700; each decimal digit holds one octal digit, see `DigitGrid` in §5.3). This is what makes the generalisation cheap: the `TuningSession` state machine, which is the hardest-won part of the design, needs **no changes at all**. It already operated on a single value with a pending/confirmed lifecycle. Only the value's *type* was too specific, and the fix is to stop having one.
 
 ```csharp
 public readonly record struct ParameterId(string Key);
@@ -299,7 +299,7 @@ public sealed class ParameterRegistry
 ```jsonc
 {
   "id": "nav1.standby", "label": "NAV 1 STBY", "group": "nav1", "unit": "kHz",
-  "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50 },
+  "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
   "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp" },
                { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
   "read":    { "source": "simvar", "name": "NAV STANDBY FREQUENCY:1", "unit": "MHz", "scale": 1000 },
@@ -357,6 +357,16 @@ The 8.33 kHz rule it encodes is unchanged and remains the subtlest thing in the 
 
 **Implemented 2026-09-24** in `Panels/Com/ComChannelGrid.cs`, with `ChannelSpacing` beside it. It lives in the COM module rather than `Domain/Grids/` by the §4.1 rule: only one panel uses it, and the module hands it to the registry through `PanelBuilder.AddGrid` (§5.8). `DigitGrid` goes to `Panels/Transponder/` for the same reason. The rule reduces to arithmetic: a kHz value is an 8.33 channel name when `khz % 25` is 0, 5, 10 or 15, and a 25 kHz channel when it is 0. The table exists for stepping, not for membership. A cursor whose `Step` is a whole-MHz multiple moves the MHz and keeps the fraction; any other `Step` counts channels. Exact snap ties go down.
 
+**`LinearGrid` implemented 2026-09-27** in `Domain/Grids/LinearGrid.cs`, since NAV, autopilot altitude, airspeed and the barometer all share it. A cursor's `Step` is in canonical units and must be a multiple of the grid step, or `Step` throws. The optional `parent` (1000 for NAV, the MHz) makes it behave like `ComChannelGrid`: a cursor whose step is a multiple of the parent moves the parent and keeps the fraction, and a finer wrapping cursor goes round inside the parent (`108.950` → `108.000`), clipped to the range where an edge cuts a parent short. With no parent, a wrapping cursor goes round the whole range and a coarse step is plain clamped arithmetic. `max` is rounded down onto the grid; exact snap ties go down.
+
+**`WrappingGrid`, `SignedLinearGrid` and `DigitGrid` implemented 2026-09-27**, the first two in `Domain/Grids/`, `DigitGrid` in `Panels/Transponder/`. Each rejects a cursor wrap mode that would be wrong for it rather than quietly reinterpreting it, so a bad registry entry fails its round-trip test:
+
+- **`WrappingGrid`**: every cursor goes round the circle (`359` + 1 → `0`, `355` + 10 → `5`); `WrapWithinParent` and `Carry` mean the same thing, and `Clamp` throws. Out-of-range values are brought onto the circle before snapping, so a sim reporting `360` reads as `0`. `min` need not be 0 (a 1–360 card works).
+- **`SignedLinearGrid`**: `min` < 0 < `max`, both multiples of the step, so zero is always on the grid. It never wraps (`WrapWithinParent` throws; +8000 → −8000 would command a dive); the other modes stop at the ends. Ties snap **toward zero**, so `Snap(-v) == -Snap(v)`.
+- **`DigitGrid`**: the value is the code as it reads, one digit per decimal place (squawk 7700 is the int 7700, not `0o7700`), so the registry, logs and display all use the pilot's numbers, and BCO16 is the same digits packed into nibbles. A cursor picks a digit by its place value (1000, 100, 10, 1). `WrapWithinParent` turns that digit alone (7 → 0, neighbours untouched), `Carry` counts in octal (`0077` + 1 → `0100`) and stops at the ends, `Clamp` stops the digit at 0 and 7. Snap is nearest by value (`7790` → `7777`), for the case where a sim reports something that is not a code.
+
+The §11 property tests are written as exhaustive loops over every grid value rather than with FsCheck; the grids are small enough that this covers every case.
+
 **Why the grid is ours rather than the sim's.** SimConnect offers relative events (`COM_RADIO_FRACT_INC` and friends) that would let the sim apply its own spacing. Rejected: every detent would wait on a sim frame before the panel could show it, which is fine on the reference machine and not on a laptop at 25 fps; relative writes are not idempotent, so a dropped or retried event drifts where an absolute write self-corrects; and the pending/confirmed model in §5.4 assumes absolute values. The panel steps locally from this grid and the sim confirms.
 
 **Choosing the spacing.** Follow the `COM SPACING MODE:n` SimVar (`Enum`: 0 = 25 kHz, 1 = 8.33), subscribed like any other value so a mid-flight toggle is followed, and rebuild the grid on every change. **The SimVar is the only evidence.** The sim does not police spacing (below), so a frequency it reports may be one we wrote, and says nothing about what the aircraft supports. **The host must therefore never write a channel that is illegal in the current mode** — the grid is the only guard there is. On a change to 25 kHz, expect the sim to snap standby itself; `ObserveSimValue` picks that up like any other external change. Log the mode in tray diagnostics.
@@ -375,19 +385,21 @@ The 8.33 kHz rule it encodes is unchanged and remains the subtlest thing in the 
 |---|---|---|---|---|---|---|
 | C185F Skywagon | `microsoft_c185f_skywagon` | 25 kHz | none (4 runs) | all pass | 7–41 ms | stable |
 | C172SP Classic | `asobo_c172sp` | 25 kHz | none | all pass | **54–586 ms** (see below) | stable |
-| iniBuilds L-1011-500 TriStar | `inibuilds-l1011` | 25 kHz | **one, 1.4 s after** | all pass | 38–72 ms; 8–32 ms by hand later | stable |
+| iniBuilds L-1011-500 TriStar | `inibuilds-l1011` | 25 kHz | **one, 1.4 s after**; one, 0.4 s after (27th) | all pass | 38–72 ms; 50–61 ms (27th); 5–42 ms by hand later | stable |
 
 Findings:
 
 - **`SimStart` is not a readiness signal.** It fires at the aircraft-selection screen, then again on each menu transition, 60–100 s before the pilot has control. `Sim` system state reads 1 at the main menu. `Pause_EX1` flags read 8 at the menu, go to 0 before the flight loads, and do not change at the Start Flight screen.
 - **`CAMERA STATE` is the signal.** Observed values: 32 / 35 menus and loading, 12 aircraft selection, 30 fly-in, **16 Start Flight screen**, **2 cockpit, 3 external, 4 showcase / add-on view**, 0 briefly on transitions. Camera 2 can flicker for ~80 ms between 16 and 3, so gate on the *current* value.
-- **The sim and the aircraft fight over COM1 active around the handover.** At camera 16 the sim sets active to `118.505` (every aircraft, likely a departure-airport frequency; unconfirmed). The C185 once replaced it with `127.850` 48 ms before camera 2; the TriStar flipped between the two four times, with its last write **1.4 s after** camera 2. The winner varies from run to run.
+- **The sim and the aircraft fight over COM1 active around the handover.** At camera 16 the sim sets active to `118.505` (every aircraft on the 26th; `118.705` in the TriStar on the 27th, so it varies with the airport or parking spot and is not a fixed placeholder). The C185 once replaced it with `127.850` 48 ms before camera 2; the TriStar flipped between the two four times, with its last write **1.4 s after** camera 2 (0.4 s after on the 27th). The winner varies from run to run.
 - **Rule for `Crowsnest.Sim` (§7.3), replacing the `SimStart` rule:** write nothing and treat nothing as confirmed until `CAMERA STATE` is a flying view (2, 3, 4) **and** no unsolicited change has arrived for a quiet period (3 s passed in every run; the TriStar margin was 1.6 s, so use 5 s). After that, changes need no special handling: they are external changes to `ObserveSimValue`, and a spacing change rebuilds the grid.
-- **The sim writes off-grid values itself.** `118.505` is an 8.33-only channel, set while every aircraft was in 25 kHz mode. `ComChannelGrid` must accept a current value that is not on the grid, show it as it is, and snap only on the first detent.
-- **COM1 can read `0.000` / `0.000`** mid-load (TriStar). Treat 0 Hz as "no value", never as a frequency to confirm or step from.
-- **Latency is not uniform.** The C172's self-test, 3 s after handover, read back at 54–586 ms. Not yet re-tested once the sim has fully loaded; the TriStar's by-hand writes after its hold were 8–32 ms. The §5.4 settle timeout must allow at least 600 ms until this is understood.
+- **The sim writes off-grid values itself.** `118.505` is an 8.33-only channel, set while every aircraft was in 25 kHz mode. The host must accept a current value that is not on the grid and show it as it is; nothing snaps until the pilot turns a knob. **Decided 2026-09-27:** the first detent snaps and steps in one go (`118.505` + 1 → `118.525` in 25 kHz mode), which is what `IValueGrid.Step` already does. The alternative, spending the first click on the snap alone (`118.500`), is to be revisited once the panel is tested in MSFS.
+- **COM1 can read `0.000` / `0.000`** mid-load (TriStar, both runs, ~19 s after `SimStart`). Treat 0 Hz as "no value", never as a frequency to confirm or step from.
+- **Latency is higher just after the handover.** The C172's self-test, 3 s after handover, read back at 54–586 ms. The TriStar shows the same pattern on the 27th: 50–61 ms in the self-test, 5–42 ms by hand a minute or more later. So the slow figures look like "sim still busy after load" rather than something aircraft-specific, and a separate C172 re-test is not planned; `Crowsnest.Sim` will log read-back latency on every write, which will settle it with real data. The §5.4 settle timeout must allow at least 600 ms until then.
+- **The TriStar's cockpit radio follows the SimVars in both directions** (2026-09-27). `COM_STBY_RADIO_SET_HZ`, swap and the spacing toggle all showed on its own COM display, and its knob and transfer switch showed up in the SimVars. So standard SimVars fully support it; no L-vars are needed.
+- **The aircraft's own 8.33 knob steps channel names, matching `ComChannelGrid`.** Turning the TriStar's standby knob in 8.33 mode read back `118.700 .705 .710 .715 .725 .730 .735 .740 .750 .755 .760 .765 .775`, skipping `.720 .745 .770` exactly as the grid does.
 
-Still open: whether the TriStar's own cockpit radio display follows the SimVar writes (the SimVars and events work, but a study-level jet may draw its display from its own state); whether the C172's 500 ms read-back persists after full load; what 118.505 is; and whether any aircraft reports 8.33 capability it does not actually have. The iniBuilds TriStar is probably the best case for a study-level jet, since iniBuilds works closely with the MSFS team; PMDG / Fenix-class aircraft may behave worse.
+Still open: whether any aircraft reports 8.33 capability it does not actually have. The iniBuilds TriStar is probably the best case for a study-level jet, since iniBuilds works closely with the MSFS team; PMDG / Fenix-class aircraft may keep their own radio state and behave worse.
 
 **Roadmap coverage.** Everything planned is reachable with these five grids:
 

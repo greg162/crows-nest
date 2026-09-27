@@ -143,6 +143,19 @@ public class ComChannelGridTests
         Assert.Equal(118_025, EightThree.Step(118_020, 1, Khz));
     }
 
+    [Theory]
+    [InlineData(118_505, 1, 118_525)]
+    [InlineData(118_505, -1, 118_475)]
+    [InlineData(118_705, 1, 118_725)]
+    public void SimsOwnOffGridValueSnapsThenStepsOnTheFirstDetent(int from, int detents, int expected)
+    {
+        // The sim sets 118.505 / 118.705 at the Start Flight screen while the aircraft is in
+        // 25 kHz mode (spec §5.3, 2026-09-26/27). Decided 2026-09-27: the first detent snaps
+        // and steps in one go, rather than spending a click on the snap. Revisit in MSFS.
+        Assert.False(TwentyFive.Contains(from));
+        Assert.Equal(expected, TwentyFive.Step(from, detents, Khz));
+    }
+
     [Fact]
     public void ZeroDetentsIsANoOp()
     {
