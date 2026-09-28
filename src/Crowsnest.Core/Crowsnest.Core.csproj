@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Registry entries (spec §5.2). Resource names follow the folder: Crowsnest.Core.Panels.Com.com.parameters.json. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Panels\**\*.parameters.json" />
+  </ItemGroup>
+
 </Project>

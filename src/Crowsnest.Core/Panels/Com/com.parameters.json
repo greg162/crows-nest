@@ -1,0 +1,30 @@
+// COM 1 (spec §5.2, §7.3). Frequencies are read in Hz, as verified in spike 0(a), so the
+// kHz value needs no floating-point MHz round trip.
+[
+  {
+    "id": "com1.standby", "label": "COM 1 STBY", "group": "com1", "unit": "kHz",
+    "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com1.spacing" },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
+    "read":    { "source": "simvar", "name": "COM STANDBY FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "COM_STBY_RADIO_SET_HZ", "encoding": "hz" },
+    "format":  "freq3"
+  },
+  {
+    // COM 1 uses the unnumbered COM_RADIO_SET_HZ; there is no COM1_RADIO_SET_HZ.
+    "id": "com1.active", "label": "COM 1", "group": "com1", "unit": "kHz",
+    "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com1.spacing" },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
+    "read":    { "source": "simvar", "name": "COM ACTIVE FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "COM_RADIO_SET_HZ", "encoding": "hz" },
+    "format":  "freq3"
+  },
+  {
+    // The aircraft's spacing mode: 0 = 25 kHz, 1 = 8.33 kHz. Read, never tuned; both grids
+    // above follow it through "spacingFrom" (spec §5.3). Toggled in the cockpit with
+    // COM_1_SPACING_MODE_SWITCH.
+    "kind": "watch", "id": "com1.spacing",
+    "read": { "source": "simvar", "name": "COM SPACING MODE:1", "unit": "Enum" }
+  }
+]

@@ -178,7 +178,6 @@ src/Crowsnest.Core/
     ├── Com/
     │   ├── ComPanelModule.cs      COM 1 + COM 2
     │   ├── ComChannelGrid.cs      + ChannelSpacing; COM is its only user
-    │   ├── ComFrequencyFormatter.cs
     │   ├── ComSpacingBehaviour.cs
     │   └── com.parameters.json    embedded resource
     ├── Nav/                       phase 5
@@ -282,15 +281,29 @@ public sealed class ParameterRegistry
 
 `CursorLevel.DisplaySpan` is the character range the cursor underlines in the formatted string — `4..7` for the kHz digits of `"121.500"`. The host computes it; the firmware just underlines those characters. This is what lets a page for autopilot altitude reuse the same rendering code as a COM page.
 
+**Registry implemented 2026-09-27.** `ParameterJsonReader` and `ParameterRegistry` in `Application/`; the entries in `Panels/Com/com.parameters.json` (COM 1 active + standby) and `Panels/Nav/nav.parameters.json` (NAV 1, per phase 1), embedded by a `Panels\**\*.parameters.json` glob. Rules the examples above now follow:
+
+- **Every field is required** except `cursors[].wrap` (default `carry`, the one mode every grid accepts) and `read.scale` (default 1). In particular `span` is required: an omitted span has no sensible default. Enum values are case-insensitive; comments and trailing commas are allowed.
+- **Grid types are looked up by key.** `linear`, `wrapping` and `signedLinear` are built in (`StandardGrids`); a panel that owns a grid type supplies its factory (`ComGrids.Factory` for `comChannel`), so `Application/` never references `Panels/`. Formatters likewise (`StandardFormatters`).
+- **Each cursor is tried against its grid at load**, so a step or wrap mode the grid rejects (`clamp` on a heading) fails at startup with the entry and cursor named, not on the first detent. Every error is an `InvalidDataException` naming the entry and field.
+- **Frequencies are read in `Hz` with scale 0.001**, as spike 0(a) verified, rather than MHz × 1000: no floating-point MHz round trip.
+- **`comChannel` starts at 25 kHz.** `spacingFrom` is parsed but not yet acted on; until the spacing behaviour (§5.8) exists, 25 kHz is the safe grid, since every 25 kHz channel is legal under 8.33.
+- **`Panels/DefaultParameters`** wires the JSON files, grid factories and formatters together. It stands in for `IPanelModule` / `PanelBuilder` and goes away when they arrive. `ParameterRegistry.Groups` is not built yet: swap events belong to pages, which the modules contribute.
+- **The §11 test** runs over every shipped entry: each cursor span fits the widest formatted value, each cursor steps onto the grid from both ends, and each placeholder is as wide as a value.
+
+**Spans may count from the end** (added 2026-09-27). A fixed-width value uses start indices (`4..7` in `"121.500"`, `0..2` in `"005"`). A value whose width varies — `"9,000"` vs `"12,000"` — uses C# from-end indices, so one span in the registry fits every width: `..^4` is the thousands and up, `^3..^2` the hundreds digit. `CursorSpans.Resolve` (`Domain/Formatting/`) turns either form into start-relative indices when a frame is built; the device only ever sees `[start, end)` from the start. A span that does not fit (`"500"` has no thousands) resolves to nothing and no underline is drawn.
+
+**Formatters, implemented 2026-09-27** in `Domain/Formatting/`. `IValueFormatter` is `string Format(int value)` plus a `Placeholder` (`"---.---"`) shown until the sim reports a value; it never throws, since the value may be anything the sim sent. Registry keys: `freq3` / `freq2` → `FrequencyFormatter(3 | 2)` (`"121.500"`, `"108.05"`; two decimals drops the last kHz digit, so never use it for COM); `thousands` / `signedThousands` → `GroupedFormatter` (`"12,000"`, `"+1,500"`, level flight is `"0"`); `deg3` / `code4` → `PaddedFormatter(3 | 4)` (`"005"`, `"0077"`). All use the invariant culture (and the build sets `InvariantGlobalization`). `FrequencyFormatter` is shared by COM and NAV, so it lives in `Domain/Formatting/` rather than as a `ComFrequencyFormatter` in `Panels/Com/`.
+
 **Registry entries.** Held as embedded JSON in the repo, strongly typed at load, validated by a test that round-trips every entry:
 
 ```jsonc
 {
   "id": "com1.standby", "label": "COM 1 STBY", "group": "com1", "unit": "kHz",
   "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com1.spacing" },
-  "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp" },
+  "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp", "span": "0..3" },
                { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
-  "read":    { "source": "simvar", "name": "COM STANDBY FREQUENCY:1", "unit": "MHz", "scale": 1000 },
+  "read":    { "source": "simvar", "name": "COM STANDBY FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
   "write":   { "mode": "keyEvent", "target": "COM_STBY_RADIO_SET_HZ", "encoding": "hz" },
   "format":  "freq3"
 }
@@ -300,9 +313,9 @@ public sealed class ParameterRegistry
 {
   "id": "nav1.standby", "label": "NAV 1 STBY", "group": "nav1", "unit": "kHz",
   "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
-  "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp" },
+  "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp", "span": "0..3" },
                { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
-  "read":    { "source": "simvar", "name": "NAV STANDBY FREQUENCY:1", "unit": "MHz", "scale": 1000 },
+  "read":    { "source": "simvar", "name": "NAV STANDBY FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
   "write":   { "mode": "keyEvent", "target": "NAV1_STBY_SET_HZ", "encoding": "hz" },
   "format":  "freq2"
 }
@@ -312,7 +325,7 @@ public sealed class ParameterRegistry
 {
   "id": "ap.altitude", "label": "ALTITUDE", "group": "ap.alt", "unit": "ft",
   "grid":    { "type": "linear", "min": 0, "max": 50000, "step": 100 },
-  "cursors": [ { "name": "coarse", "step": 1000 }, { "name": "fine", "step": 100 } ],
+  "cursors": [ { "name": "coarse", "step": 1000, "span": "..^4" }, { "name": "fine", "step": 100, "span": "^3..^2" } ],
   "read":    { "source": "simvar", "name": "AUTOPILOT ALTITUDE LOCK VAR", "unit": "feet" },
   "write":   { "mode": "keyEvent", "target": "AP_ALT_VAR_SET_ENGLISH", "encoding": "raw" },
   "format":  "thousands"
@@ -323,7 +336,7 @@ public sealed class ParameterRegistry
 {
   "id": "ap.heading", "label": "HEADING", "group": "ap.hdg", "unit": "deg",
   "grid":    { "type": "wrapping", "min": 0, "max": 359, "step": 1 },
-  "cursors": [ { "name": "tens", "step": 10 }, { "name": "ones", "step": 1 } ],
+  "cursors": [ { "name": "tens", "step": 10, "span": "0..2" }, { "name": "ones", "step": 1, "span": "2..3" } ],
   "read":    { "source": "simvar", "name": "AUTOPILOT HEADING LOCK DIR", "unit": "degrees" },
   "write":   { "mode": "keyEvent", "target": "HEADING_BUG_SET", "encoding": "raw" },
   "format":  "deg3"
@@ -454,6 +467,15 @@ The class is pure — no clock, no logger, no I/O; `now` is a parameter. `Toggle
 
 **The reconciliation rule, unchanged.** While a pending value exists, inbound sim values are ignored unless they equal it (→ `Confirmed`). If a pending value stays outstanding beyond `SettleTimeout`, the session reverts to the sim's value and reports `Rejected`. Writes are coalesced by `WriteDebounce` but forced out every `MaxWriteInterval` so a long spin keeps streaming.
 
+**Implemented 2026-09-27** in `Domain/Tuning/` (`TuningSession`, `TuningOptions`, `IEncoderAcceleration` + `NoAcceleration`), with `ParameterId` and a slimmed `ParameterDefinition` (id, label, grid, cursors) in `Domain/`; the bindings and formatter join `ParameterDefinition` when the registry and gateway need them. Differences from the sketch above:
+
+- **`HasValue`.** Until the sim reports a value there is nothing to show or step from, so detents are ignored. The gateway's "0 Hz is no value" rule (§5.3) feeds this: it simply does not call `ObserveSimValue` with 0.
+- **`ToggleCursor()` and `ObserveSimValue(int)` take no `now`.** Neither needed it.
+- **`TuningOptions.Default`** holds the 120 / 300 / 1500 ms values and `NoAcceleration`. The 1500 ms settle timeout already clears the ≥ 600 ms the aircraft matrix asked for.
+- **Confirmation mid-spin.** If the sim reports an earlier write of the current spin while the pilot has moved on, `Confirmed` updates but the display does not move back and the session stays `AwaitingConfirmation`. A rejection reverts to the *latest* value the sim reported, including values the session ignored while waiting.
+- **No needless writes.** Turning back to the starting value before anything was written clears the pending value with no write; turning back to the last value written does not write it again. A detent that stops at a clamped end changes nothing.
+- **Timers.** The debounce runs from the last detent; the forced write runs from the first detent not yet written, and fires from `ApplyDetents` as well as `Tick`; the settle timeout runs from the latest write, so a long spin that keeps writing is never rejected.
+
 This matters *more* for autopilot than for radios. The sim writes to AP values continuously — VNAV steps the altitude, LNAV moves the heading bug — so the "sim disagrees with me" case stops being an edge case and becomes normal operation.
 
 ### 5.5 Pages
@@ -576,6 +598,17 @@ public abstract record BridgeCommand
 ```
 
 Gesture bindings become configuration. The v1 map: turn → `AdjustValue`, short press → `CycleCursor`, tap → `SwapSlots`, long press → `NextPage`, swipe → `NextPage`/`PreviousPage` where touch supports it.
+
+**Implemented 2026-09-27** in `Application/`: `PanelEngine`, `PanelCoordinator`, `PanelPage` + `PageNavigator`, `BridgeCommand` + `IInputActionMap` + `DefaultInputActionMap` (the v1 map above; left swipe = next, right = previous), and `Ports/ISimParameterGateway`. Differences from the sketch:
+
+- **Split into a pure engine and an async shell.** `PanelEngine` holds the sessions, the page and the frame revision; each call takes one event (`OnInput`, `OnSnapshot`, `OnSimConnection`, `OnTick`) and returns `PanelEffects`: sim commands in order, then an optional frame. `PanelCoordinator` owns the `Channel`, the producers (device inputs, sim snapshots, both connection states, a `PeriodicTimer` on the injected `TimeProvider`) and carries effects out. Almost every scenario is therefore a synchronous test with explicit timestamps; the coordinator's own tests use `FakeTimeProvider` only to check the wiring.
+- **No `ILogger`, no `IOptionsMonitor`**, which would break the §4 BCL-only rule. The constructor takes `TuningOptions`, `TimeProvider` and an optional `Action<Exception>` called when a write, swap or render throws; the loop carries on (the settle timeout catches a lost write, the next frame a lost one). The pages are a plain list until the modules (§5.8) supply an `IPageCatalog`. It owns nothing, so it is not `IAsyncDisposable`.
+- **Every session is ticked**, not only the current page's: tuning COM and swiping away inside the debounce must not strand the write. With a handful of parameters this costs nothing.
+- **Swap flushes first.** A tap with a dialled value not yet written sends the write, then the swap event, so the sim swaps what the pilot sees (`TuningSession.Flush`). The swap's result arrives as two ordinary snapshots.
+- **Frames.** The knob always tunes the page's first field, and only that field carries a cursor, resolved through `CursorSpans` and omitted while the value is a placeholder. `Pending` follows `AwaitingConfirmation`, and a change to it redraws even when the text is unchanged (confirmation, a rejection back to the same value). Every new input sequence is acknowledged with a frame, even an ignored gesture; a replayed sequence is not. A device returning to `Connected` gets a full frame.
+- **Acceleration timing** uses the device's timestamps between turns, not the host clock; session timers use the host clock.
+- **COM spacing, implemented 2026-09-27.** `com.parameters.json` has a watch entry (`"kind": "watch"`, id and read binding only) for `COM SPACING MODE:1`. `ISimParameterGateway.SubscribeAsync` takes `ParameterRegistry.Subscriptions` — every parameter plus every watch, as `SimSubscription(Id, Read)` — replacing `AllReadBindings`. A minimal `IPanelBehaviour` (`OnSnapshot` only; `OnCommand` waits for the transponder) sees every snapshot before the sessions do, through an `IPanelContext` that can `ReplaceGrid`. `ComSpacingBehaviour` is both the `comChannel` grid factory and the behaviour: the factory notes which parameters name which watch in `spacingFrom`, `Validate` fails startup if the watch does not exist, and a mode snapshot (0 = 25 kHz, 1 = 8.33, anything else ignored) rebuilds those grids. `TuningSession.ReplaceGrid` drops a value still being dialled rather than snapping it; the sim snaps its own values and reports them as ordinary changes. `DefaultParameters.Load()` now returns a `PanelSetup` (registry, pages, behaviours).
+- **Not yet:** capability-driven layout selection, multiple devices (§6.5), and notices (e.g. surfacing a rejection).
 
 ### 5.8 Panel modules
 
@@ -1261,6 +1294,8 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 | **6 — Autopilot** | Altitude, heading, vertical speed, airspeed | Exercises `SignedLinearGrid`, `WrappingGrid`, and three-level cursors |
 | **6.5 — Multi-panel** | `IPanelDeviceManager`, role assignment UI, OTA update flow | Three panels on one hub, each assigned different pages, sharing tuning state; all three update from one tray action |
 | **7 — Portability** | Second board port + Wi-Fi transport | A board Crowsnest was not designed against runs the unmodified `crowsnest_ui` |
+
+**Phase 1 demo, 2026-09-27.** `tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `PanelDeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedPanel` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
 
 Phase 0 exists because all four of the project's real unknowns are in it. Phase 5 is deliberately positioned as a **test of the architecture** rather than just a feature: if adding NAV 1 is not nearly free, that is worth knowing before the autopilot work starts.
 

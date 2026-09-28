@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Crowsnest.Core\Crowsnest.Core.csproj" />
     <ProjectReference Include="..\..\src\Crowsnest.Device\Crowsnest.Device.csproj" />
+    <ProjectReference Include="..\..\src\Crowsnest.Sim\Crowsnest.Sim.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

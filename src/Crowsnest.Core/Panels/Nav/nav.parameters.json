@@ -1,0 +1,22 @@
+// NAV 1 (spec §5.2). Registered in phase 1 although only COM 1 ships, to prove the
+// generalisation before it is needed (spec §13, phase 1). No NAV module or page exists yet.
+[
+  {
+    "id": "nav1.standby", "label": "NAV 1 STBY", "group": "nav1", "unit": "kHz",
+    "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
+    "read":    { "source": "simvar", "name": "NAV STANDBY FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "NAV1_STBY_SET_HZ", "encoding": "hz" },
+    "format":  "freq2"
+  },
+  {
+    "id": "nav1.active", "label": "NAV 1", "group": "nav1", "unit": "kHz",
+    "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
+    "read":    { "source": "simvar", "name": "NAV ACTIVE FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "NAV1_RADIO_SET_HZ", "encoding": "hz" },
+    "format":  "freq2"
+  }
+]
