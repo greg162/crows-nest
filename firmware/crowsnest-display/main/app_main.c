@@ -50,7 +50,13 @@ static cn_link_rx_t s_rx;
 static char s_hardware_id[13];
 static int32_t s_sequence;
 static int32_t s_applied_revision = -1;
-static bool s_host_seen;
+static volatile bool s_host_seen;
+
+/* The host pings every 2 s and gives up after three missed pongs. Past this with no frame
+ * at all, it has gone (quit, crashed, cable pulled on its side), and the panel must say so
+ * rather than sit on the last frame looking alive but dead (found 2026-09-27). */
+#define HOST_SILENCE_MS 7000
+static TickType_t s_last_frame_at;
 
 /* ---- Transmit ------------------------------------------------------------------------ */
 
@@ -95,7 +101,8 @@ static void send_hello(void)
         .width = BSP_LCD_H_RES,
         .height = BSP_LCD_V_RES,
         .has_encoder = true,
-        .detents_per_click = 4,
+        /* crowsnest_input already turns edges into clicks, so each detent sent is one click. */
+        .detents_per_click = 1,
         /* The CST8xx driver is not wired up yet, so this panel honestly reports no touch
          * and the host will not hand it a page whose only swap gesture is a tap. */
         .has_touch = false,
@@ -134,8 +141,14 @@ static void on_frame(const char *line, size_t len, void *user)
         return;
     }
 
+    s_last_frame_at = xTaskGetTickCount();
+
     switch (message.type) {
     case CN_MSG_HELLO:
+        /* A new host session numbers its frames from 1 again. Without this reset the panel
+         * would discard every frame until the new revisions overtook the old session's,
+         * and look frozen after a host restart (found 2026-09-27). */
+        s_applied_revision = -1;
         s_host_seen = true;
         send_hello();
         break;
@@ -166,6 +179,21 @@ static void on_frame(const char *line, size_t len, void *user)
     }
 }
 
+/* Back to the screen a fresh panel shows. The next host announces itself with a hello,
+ * which this panel answers as it always does. */
+static void host_lost(void)
+{
+    ESP_LOGW(TAG, "no frame from the host for %d ms; waiting for it again", HOST_SILENCE_MS);
+    s_host_seen = false;
+    s_applied_revision = -1;
+    cn_link_rx_init(&s_rx); /* drop any half-received frame */
+
+    if (bsp_display_lock(200)) {
+        crowsnest_ui_show_waiting(s_hardware_id);
+        bsp_display_unlock();
+    }
+}
+
 static void link_rx_task(void *arg)
 {
     (void)arg;
@@ -177,6 +205,10 @@ static void link_rx_task(void *arg)
         int read = usb_serial_jtag_read_bytes(chunk, sizeof chunk, pdMS_TO_TICKS(100));
         if (read > 0) {
             cn_link_rx_feed(&s_rx, chunk, (size_t)read, on_frame, NULL);
+        }
+
+        if (s_host_seen && (xTaskGetTickCount() - s_last_frame_at) > pdMS_TO_TICKS(HOST_SILENCE_MS)) {
+            host_lost();
         }
     }
 }

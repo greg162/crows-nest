@@ -1,7 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The bridge with no tray: Crowsnest.Host in a console, logging to the terminal. Stands in
+       for Crowsnest.Tray (spec s8) until it exists. -->
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Crowsnest.SimConnect\Crowsnest.SimConnect.csproj" />
+    <ProjectReference Include="..\..\src\Crowsnest.Host\Crowsnest.Host.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

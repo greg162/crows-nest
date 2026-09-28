@@ -14,10 +14,17 @@ static const char *TAG = "input";
 
 /*
  * Quadrature on the ESP32-S3's PCNT, with the hardware glitch filter doing the debouncing
- * (spec §9.2). Four edges per mechanical detent on this encoder, which is what the panel
- * reports as detentsPerClick and what the host divides by.
+ * (spec §9.2). This knob is a half-step encoder: two edges per mechanical detent, measured
+ * 2026-09-27 (at 4, the value changed on every other click). The conversion happens here,
+ * so the host receives whole detents.
  */
-#define ENCODER_EDGES_PER_DETENT 4
+#define ENCODER_EDGES_PER_DETENT 2
+
+/*
+ * +1 or -1. With the decode below, this board's wiring counts anticlockwise as positive;
+ * the host expects clockwise to increase the value, as on a real radio (found 2026-09-27).
+ */
+#define ENCODER_CLOCKWISE_SIGN (-1)
 
 static pcnt_unit_handle_t s_unit;
 static int s_residual; /* edges left over from the last detent conversion */
@@ -86,7 +93,7 @@ int crowsnest_encoder_read_detents(void)
 
     /* Carry the remainder rather than truncating it, or a slow turn never reaches a
      * whole detent and the knob feels dead. */
-    int edges = count + s_residual;
+    int edges = (ENCODER_CLOCKWISE_SIGN * count) + s_residual;
     int detents = edges / ENCODER_EDGES_PER_DETENT;
     s_residual = edges - (detents * ENCODER_EDGES_PER_DETENT);
     return detents;

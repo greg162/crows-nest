@@ -44,6 +44,11 @@ idf.py build
 idf.py -p COM4 flash
 ```
 
+**Changes only reach the panel once they are flashed.** A `dotnet run` rebuilds the PC side
+but never the firmware. And **stop anything holding COM4 first** — `Crowsnest.DevConsole`, the
+`DeviceSimulator`, `LinkSpike` — or `flash` fails with "Access is denied" (so can SignalRGB,
+see the COM4 note in the spec).
+
 `CROWSNEST_BOARD` selects the board's sdkconfig overlay, defaulting to `crowpanel_21`:
 
 ```

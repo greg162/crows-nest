@@ -1039,6 +1039,8 @@ public sealed class StartupRegistration;                // HKCU\...\Run
 public sealed class SingleInstanceGuard;                // named mutex + pipe activation
 ```
 
+**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `DefaultParameters.Load()`, the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.5) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
+
 Settings live in `%LOCALAPPDATA%\Crowsnest\settings.json`; logs roll into `%LOCALAPPDATA%\Crowsnest\logs\` with seven-day retention via Serilog, plus an in-memory ring buffer sink so the diagnostics window can tail without touching disk.
 
 The tray icon carries the whole status story: grey when nothing is connected, amber when one of sim or device is up, green when both are. Hovering shows which.
@@ -1306,6 +1308,13 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 | **7 — Portability** | Second board port + Wi-Fi transport | A board Crowsnest was not designed against runs the unmodified `crowsnest_ui` |
 
 **Phase 1 demo, 2026-09-27.** `tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `PanelDeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedPanel` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
+
+**First run with the real panel, 2026-09-27** (`Crowsnest.DevConsole` → `Crowsnest.Host`, CrowPanel fw 0.1.0 on COM4, MSFS C172). The whole chain worked first time — knob → host → SimConnect → cockpit radio, and the cockpit knob back to the panel — with four findings, all fixed in the firmware and **not yet flashed or verified**:
+
+- **The encoder is half-step: two edges per detent, not four.** At 4 the value moved on every other click. `crowsnest_input` now uses `ENCODER_EDGES_PER_DETENT 2`, and the hello reports `detents_per_click = 1`, since the shim already converts edges to clicks.
+- **Direction was reversed** (anticlockwise increased). `ENCODER_CLOCKWISE_SIGN (-1)` in `crowsnest_input` fixes it; direction is board wiring, so it belongs in the per-board shim.
+- **The panel froze after the host stopped.** Two causes: the firmware never noticed the host had gone, so it kept showing the last frame with a dead knob; and after a host restart it discarded every frame until the new session's revisions overtook the old one's. Now a `hello` resets the applied revision, and 7 s with no frame (past the host's three missed 2 s pings) returns the panel to the "waiting for Crowsnest" screen.
+- **Tap should swap** — the host already maps it (§5.7), but the CST816 touch controller (I2C 0x15) is not wired up, so the panel reports `has_touch = false` and sends no taps. Next firmware task; the touch controller shares the I2C bus with the expander that carries the knob button, which the BSP header warns about.
 
 Phase 0 exists because all four of the project's real unknowns are in it. Phase 5 is deliberately positioned as a **test of the architecture** rather than just a feature: if adding NAV 1 is not nearly free, that is worth knowing before the autopilot work starts.
 
