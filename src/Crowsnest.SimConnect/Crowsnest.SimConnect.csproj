@@ -1,9 +1,23 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <!-- The managed wrapper and native DLL from the MSFS 2024 SDK install (spike 0(a) proved the
+       wrapper under .NET 10), found through %MSFS2024_SDK% until the redistribution question
+       in spec s14 is answered. Both flow to anything that references this project. -->
+  <ItemGroup>
+    <Reference Include="Microsoft.FlightSimulator.SimConnect">
+      <HintPath>$(MSFS2024_SDK)SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</HintPath>
+    </Reference>
+    <None Include="$(MSFS2024_SDK)SimConnect SDK\lib\SimConnect.dll" Link="SimConnect.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="RequireMsfsSdk" BeforeTargets="ResolveAssemblyReferences" Condition="'$(MSFS2024_SDK)' == ''">
+    <Error Text="Set MSFS2024_SDK to the MSFS 2024 SDK folder (with a trailing backslash), e.g. C:\MSFS 2024 SDK\" />
+  </Target>
 
 </Project>
