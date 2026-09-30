@@ -71,6 +71,26 @@ void bsp_i2c_unlock(void);
 esp_err_t bsp_expander_set(uint8_t mask, bool level);
 esp_err_t bsp_expander_read(uint8_t *value);
 
+/* ---- Touch -------------------------------------------------------------------------- */
+
+/*
+ * The CST8xx touch controller at 0x15, read directly rather than through esp-bsp's
+ * esp_lcd_touch drivers. Those open their own esp_lcd I2C IO and would bypass the lock
+ * above, which is exactly the collision it exists to prevent. Its INT line is on the
+ * expander, too slow to catch a pulse from, so the controller is polled.
+ */
+typedef struct {
+    bool     pressed;
+    uint16_t x;
+    uint16_t y;
+} bsp_touch_point_t;
+
+/* Resets the controller (expander P0) and checks it answers. Needs bsp_i2c_init first. */
+esp_err_t bsp_touch_init(void);
+
+/* One sample. Takes the I2C lock itself. */
+esp_err_t bsp_touch_read(bsp_touch_point_t *point);
+
 /* ---- Display ------------------------------------------------------------------------ */
 
 /*

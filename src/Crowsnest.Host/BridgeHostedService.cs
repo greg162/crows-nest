@@ -52,7 +52,7 @@ public sealed partial class BridgeHostedService(
                 await using (device.ConfigureAwait(false))
                 {
                     LogConnected(log, device.Identity!.DeviceType, device.Identity.FirmwareVersion, device.Identity.HardwareId);
-                    device.LogReceived = line => LogFirmware(log, line.Level, line.Message);
+                    device.LogReceived = line => LogFirmware(log, FirmwareLevel(line.Level), line.Level, line.Message);
 
                     PanelCoordinator coordinator = new(setup, sim, device, actions, TuningOptions.Default, time, e => LogEffectFailed(log, e));
                     await coordinator.RunAsync(stoppingToken).ConfigureAwait(false);
@@ -111,8 +111,16 @@ public sealed partial class BridgeHostedService(
     [LoggerMessage(Level = LogLevel.Information, Message = "Panel connected: {DeviceType} {Firmware}, id {HardwareId}")]
     private static partial void LogConnected(ILogger logger, string deviceType, string firmware, string hardwareId);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Panel firmware [{Level}] {Message}")]
-    private static partial void LogFirmware(ILogger logger, string level, string message);
+    /// <summary>The panel's own warnings are worth seeing; its chatter is not.</summary>
+    private static LogLevel FirmwareLevel(string level) => level switch
+    {
+        "error" => LogLevel.Error,
+        "warn" => LogLevel.Warning,
+        _ => LogLevel.Debug,
+    };
+
+    [LoggerMessage(Message = "Panel firmware [{Level}] {Message}")]
+    private static partial void LogFirmware(ILogger logger, LogLevel logLevel, string level, string message);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Port} is not an available panel: {Reason}")]
     private static partial void LogCandidateRejected(ILogger logger, string port, string reason);

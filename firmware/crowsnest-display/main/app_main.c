@@ -9,11 +9,12 @@
  *   lvgl_task     core 1   lv_timer_handler() every 5 ms; the only task that touches LVGL
  *   link_rx_task  core 0   USB CDC read, frame split, parse, apply
  *   link_tx_task  core 0   drains the outbound queue
- *   input_task    core 0   polls crowsnest_input, emits detent and button events
+ *   input_task    core 0   polls crowsnest_input, emits detent, button and tap events
  */
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bsp/esp-bsp.h"
@@ -29,7 +30,7 @@
 
 static const char *TAG = "crowsnest";
 
-#define FIRMWARE_VERSION "0.1.0"
+#define FIRMWARE_VERSION "0.2.0"
 #define DEVICE_TYPE "crowpanel-2.1-rotary"
 
 /* One outbound frame. Sized to the largest encoder output, which is the hello. */
@@ -103,9 +104,9 @@ static void send_hello(void)
         .has_encoder = true,
         /* crowsnest_input already turns edges into clicks, so each detent sent is one click. */
         .detents_per_click = 1,
-        /* The CST8xx driver is not wired up yet, so this panel honestly reports no touch
-         * and the host will not hand it a page whose only swap gesture is a tap. */
-        .has_touch = false,
+        /* Honest about a touch controller that did not answer, so the host never hands this
+         * panel a page whose only swap gesture is a tap. */
+        .has_touch = crowsnest_touch_available(),
         .buttons = 1,
         .max_fields = CN_FIELDS_MAX,
     };
@@ -151,6 +152,14 @@ static void on_frame(const char *line, size_t len, void *user)
         s_applied_revision = -1;
         s_host_seen = true;
         send_hello();
+
+        /* The console is not on USB (see the README), so this is the only place the pilot
+         * can learn why taps do nothing. */
+        if (!crowsnest_touch_available()) {
+            char frame[TX_FRAME_MAX];
+            link_send(frame, cn_link_encode_log(frame, sizeof frame, "warn",
+                                                "no touch controller answered; taps are off"));
+        }
         break;
 
     case CN_MSG_HELLO_ACK:
@@ -218,6 +227,46 @@ static void link_rx_task(void *arg)
 #define INPUT_POLL_MS 20
 #define LONG_PRESS_MS 600
 
+/* A tap is a short touch that stays put. Anything longer or further is left alone, so a
+ * swipe or a resting finger never swaps a radio. */
+#define TAP_MAX_MS 400
+#define TAP_MAX_TRAVEL_PX 40
+
+typedef struct {
+    bool       down;
+    bool       moved;
+    TickType_t since;
+    int        x;
+    int        y;
+} touch_track_t;
+
+static void poll_touch(touch_track_t *touch, TickType_t now)
+{
+    bool down = false;
+    int x = 0;
+    int y = 0;
+    if (crowsnest_touch_read(&down, &x, &y) != ESP_OK) {
+        /* A missed sample, not a lifted finger: ending the touch here would turn one long
+         * press into a tap. */
+        return;
+    }
+
+    if (down && !touch->down) {
+        *touch = (touch_track_t){ .down = true, .since = now, .x = x, .y = y };
+    } else if (down) {
+        if (abs(x - touch->x) > TAP_MAX_TRAVEL_PX || abs(y - touch->y) > TAP_MAX_TRAVEL_PX) {
+            touch->moved = true;
+        }
+    } else if (touch->down) {
+        /* Sent on lift, not on contact: only then is it known not to be a swipe. */
+        if (!touch->moved && (now - touch->since) <= pdMS_TO_TICKS(TAP_MAX_MS)) {
+            char frame[96];
+            link_send(frame, cn_link_encode_tap(frame, sizeof frame, ++s_sequence, touch->x, touch->y));
+        }
+        touch->down = false;
+    }
+}
+
 static void input_task(void *arg)
 {
     (void)arg;
@@ -225,6 +274,7 @@ static void input_task(void *arg)
     bool was_pressed = false;
     TickType_t pressed_at = 0;
     bool long_sent = false;
+    touch_track_t touch = { 0 };
 
     for (;;) {
         int detents = crowsnest_encoder_read_detents();
@@ -251,6 +301,11 @@ static void input_task(void *arg)
         }
 
         was_pressed = pressed;
+
+        if (crowsnest_touch_available()) {
+            poll_touch(&touch, now);
+        }
+
         vTaskDelay(pdMS_TO_TICKS(INPUT_POLL_MS));
     }
 }

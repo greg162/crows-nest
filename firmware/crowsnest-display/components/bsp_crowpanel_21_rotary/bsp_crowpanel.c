@@ -114,6 +114,94 @@ esp_err_t bsp_expander_read(uint8_t *value)
     return err;
 }
 
+/* ---- Touch --------------------------------------------------------------------------- */
+
+/*
+ * The CST8xx family (CST816, CST826 and relatives) share a layout from register 0x02:
+ * finger count, then X and Y as 12-bit big-endian pairs. Reading from there works whichever
+ * variant this board carries. 0xA7 and 0xFE are CST816-only.
+ */
+#define CST8XX_REG_FINGERS 0x02
+#define CST816_REG_CHIP_ID 0xA7
+#define CST816_REG_DIS_AUTO_SLEEP 0xFE
+
+static i2c_master_dev_handle_t s_touch;
+
+static esp_err_t touch_read_register(uint8_t reg, uint8_t *out, size_t len)
+{
+    if (!bsp_i2c_lock(200)) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = i2c_master_transmit_receive(s_touch, &reg, 1, out, len, 50);
+    bsp_i2c_unlock();
+    return err;
+}
+
+esp_err_t bsp_touch_init(void)
+{
+    if (s_touch != NULL) {
+        return ESP_OK;
+    }
+    ESP_RETURN_ON_ERROR(bsp_i2c_init(), TAG, "i2c");
+
+    const i2c_device_config_t touch_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = BSP_I2C_ADDR_TOUCH,
+        .scl_speed_hz = 400000,
+    };
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(s_bus, &touch_config, &s_touch), TAG, "touch");
+
+    /* Reset into a known state. The controller needs the better part of 100 ms after
+     * reset before it answers on the bus. */
+    ESP_RETURN_ON_ERROR(bsp_expander_set(BSP_EXP_TOUCH_RESET, false), TAG, "touch reset low");
+    vTaskDelay(pdMS_TO_TICKS(10));
+    ESP_RETURN_ON_ERROR(bsp_expander_set(BSP_EXP_TOUCH_RESET, true), TAG, "touch reset high");
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    uint8_t chip_id = 0;
+    esp_err_t err = touch_read_register(CST816_REG_CHIP_ID, &chip_id, 1);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "no touch controller answered at 0x%02x: %s", BSP_I2C_ADDR_TOUCH, esp_err_to_name(err));
+        i2c_master_bus_rm_device(s_touch);
+        s_touch = NULL;
+        return err;
+    }
+
+    /* A CST816 drops into standby a few seconds after the last touch and stops answering
+     * I2C until touched again, which a polled controller cannot live with. Keep it awake. */
+    if (chip_id == 0xB4 || chip_id == 0xB5 || chip_id == 0xB6) {
+        const uint8_t stay_awake[] = { CST816_REG_DIS_AUTO_SLEEP, 0x01 };
+        if (bsp_i2c_lock(200)) {
+            (void)i2c_master_transmit(s_touch, stay_awake, sizeof stay_awake, 50);
+            bsp_i2c_unlock();
+        }
+    }
+
+    ESP_LOGI(TAG, "touch controller at 0x%02x, chip id 0x%02x", BSP_I2C_ADDR_TOUCH, chip_id);
+    return ESP_OK;
+}
+
+esp_err_t bsp_touch_read(bsp_touch_point_t *point)
+{
+    if (s_touch == NULL || point == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Polled every 20 ms, so a failure is returned quietly rather than logged. */
+    uint8_t data[5] = { 0 };
+    esp_err_t err = touch_read_register(CST8XX_REG_FINGERS, data, sizeof data);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    /* 1-5 fingers is a touch; 0 is none, and some variants report 0xFF between samples. */
+    uint8_t fingers = data[0] & 0x0F;
+    point->pressed = fingers >= 1 && fingers <= 5;
+    point->x = (uint16_t)(((data[1] & 0x0F) << 8) | data[2]);
+    point->y = (uint16_t)(((data[3] & 0x0F) << 8) | data[4]);
+    return ESP_OK;
+}
+
 /* ---- ST7701 configuration bus -------------------------------------------------------- */
 
 /*

@@ -28,6 +28,7 @@ static const char *TAG = "input";
 
 static pcnt_unit_handle_t s_unit;
 static int s_residual; /* edges left over from the last detent conversion */
+static bool s_has_touch;
 
 esp_err_t crowsnest_input_init(void)
 {
@@ -76,6 +77,9 @@ esp_err_t crowsnest_input_init(void)
     ESP_RETURN_ON_ERROR(pcnt_unit_start(s_unit), TAG, "pcnt start");
 
     ESP_LOGI(TAG, "encoder on GPIO %d/%d, button on expander P5", BSP_ENCODER_A, BSP_ENCODER_B);
+
+    /* Not fatal: without touch the panel still tunes, and says so in its hello. */
+    s_has_touch = bsp_touch_init() == ESP_OK;
     return ESP_OK;
 }
 
@@ -108,4 +112,29 @@ bool crowsnest_button_is_pressed(void)
         return false;
     }
     return (value & BSP_EXP_ENCODER_BUTTON) == 0;
+}
+
+bool crowsnest_touch_available(void)
+{
+    return s_has_touch;
+}
+
+esp_err_t crowsnest_touch_read(bool *down, int *x, int *y)
+{
+    if (!s_has_touch) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    bsp_touch_point_t point;
+    esp_err_t err = bsp_touch_read(&point);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    /* The panel is mounted unrotated (bsp_display_start), so the controller's axes are the
+     * display's. Clamped so a stray reading never reaches the host as an off-screen point. */
+    *down = point.pressed;
+    *x = point.x < BSP_LCD_H_RES ? point.x : BSP_LCD_H_RES - 1;
+    *y = point.y < BSP_LCD_V_RES ? point.y : BSP_LCD_V_RES - 1;
+    return ESP_OK;
 }
