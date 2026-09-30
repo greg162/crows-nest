@@ -170,9 +170,10 @@ public sealed class PanelDeviceConnection : IPanelDevice
                 // Malformed frames and unknown message types are ignored by design (spec §6.1).
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Shutting down.
+            // Shutting down. An abort we did not ask for (Windows can report a pulled cable
+            // as a cancelled read) falls through to the fault below.
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {

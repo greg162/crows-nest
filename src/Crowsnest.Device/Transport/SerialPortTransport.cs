@@ -58,10 +58,27 @@ public sealed class SerialPortTransport(string portName, int baudRate = 921_600)
     {
         _connected.OnNext(false);
         _connected.OnCompleted();
-        _input?.Complete();
-        _output?.Complete();
-        _port?.Dispose();
+
+        // Teardown runs after the cable is pulled, when every one of these can throw
+        // ("A device which does not exist was specified"): completing the writer flushes
+        // whatever is still buffered into a port that has gone. Each step is best effort,
+        // or one failure leaks the rest and takes the host down with it.
+        Try(() => _input?.Complete());
+        Try(() => _output?.Complete());
+        Try(() => _port?.Dispose());
         _port = null;
         return ValueTask.CompletedTask;
+    }
+
+    private static void Try(Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or ObjectDisposedException)
+        {
+            // The port is already gone.
+        }
     }
 }

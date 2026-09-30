@@ -165,6 +165,17 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AFaultedDeviceEndsTheRun()
+    {
+        await StartTuned();
+
+        _device.State.Publish(DeviceConnectionState.Faulted);
+
+        await Assert.ThrowsAsync<IOException>(() => _run!.WaitAsync(TimeSpan.FromSeconds(5)));
+        _run = null;
+    }
+
+    [Fact]
     public async Task CancellingStopsTheRunCleanly()
     {
         await StartTuned();

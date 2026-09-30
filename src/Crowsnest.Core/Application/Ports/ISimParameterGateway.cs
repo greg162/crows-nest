@@ -17,7 +17,10 @@ public interface ISimParameterGateway : IAsyncDisposable
     /// </summary>
     IAsyncEnumerable<ParameterSnapshot> Snapshots { get; }
 
-    /// <summary>Subscribes to every value, parameters and watches alike; snapshots come back under each subscription's id.</summary>
+    /// <summary>
+    /// Subscribes to every value, parameters and watches alike; snapshots come back under each subscription's id.
+    /// Subscribing again re-sends the latest known values, so a new reader does not wait for the next change.
+    /// </summary>
     Task SubscribeAsync(IReadOnlyList<SimSubscription> subscriptions, CancellationToken ct);
 
     Task WriteAsync(ParameterId id, int canonicalValue, CancellationToken ct);

@@ -185,6 +185,22 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SubscribingAgainResendsTheLatestValues()
+    {
+        await StartReadyAsync();
+        await Eventually(() => _snapshots.Contains(new ParameterSnapshot(ComStandby, 124_850)), "the first values");
+        _snapshots.Clear();
+
+        // A panel plugged back in: a new coordinator subscribes to what is already watched.
+        await _gateway.SubscribeAsync(DefaultParameters.Load().Registry.Subscriptions, CancellationToken.None);
+        await Advance(TimeSpan.FromMilliseconds(200));
+
+        await Eventually(() => _snapshots.Contains(new ParameterSnapshot(ComStandby, 124_850)), "the values again");
+        Assert.Contains(new ParameterSnapshot(ComActive, 127_850), _snapshots);
+        Assert.Equal(6, Client.Watches.Count);
+    }
+
+    [Fact]
     public async Task AnUnchangedValueIsNotPassedOnTwice()
     {
         await StartReadyAsync();

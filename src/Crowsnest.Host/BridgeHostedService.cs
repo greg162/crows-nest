@@ -47,20 +47,22 @@ public sealed partial class BridgeHostedService(
             }
 
             announcedSearching = false;
-            await using (device.ConfigureAwait(false))
+            try
             {
-                LogConnected(log, device.Identity!.DeviceType, device.Identity.FirmwareVersion, device.Identity.HardwareId);
-                device.LogReceived = line => LogFirmware(log, line.Level, line.Message);
-
-                PanelCoordinator coordinator = new(setup, sim, device, actions, TuningOptions.Default, time, e => LogEffectFailed(log, e));
-                try
+                await using (device.ConfigureAwait(false))
                 {
+                    LogConnected(log, device.Identity!.DeviceType, device.Identity.FirmwareVersion, device.Identity.HardwareId);
+                    device.LogReceived = line => LogFirmware(log, line.Level, line.Message);
+
+                    PanelCoordinator coordinator = new(setup, sim, device, actions, TuningOptions.Default, time, e => LogEffectFailed(log, e));
                     await coordinator.RunAsync(stoppingToken).ConfigureAwait(false);
                 }
-                catch (Exception e) when (e is not OperationCanceledException)
-                {
-                    LogPanelLost(log, e);
-                }
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // The run failing and the teardown of a pulled cable failing both land here.
+                // Neither may end this loop: it is the only thing that finds the panel again.
+                LogPanelLost(log, e);
             }
         }
     }

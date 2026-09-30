@@ -51,6 +51,9 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
     private volatile ISimConnectClient? _client;
     private volatile bool _ready;
 
+    // Set by SubscribeAsync, cleared by the loop once it has re-sent the latest values.
+    private volatile bool _replay;
+
     public SimConnectParameterGateway(
         ParameterRegistry registry,
         Func<ISimConnectClient> connect,
@@ -86,6 +89,10 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
             }
         }
 
+        // A new subscriber (a panel plugged back in) starts with no values, and SimConnect only
+        // reports changes, so a cockpit that sits still would never fill it in. Ask the loop,
+        // which owns the latest values, to send them all again.
+        _replay = true;
         return Task.CompletedTask;
     }
 
@@ -223,6 +230,11 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
             {
                 BecomeReady();
             }
+            else if (_ready && _replay)
+            {
+                _replay = false;
+                PublishLatest();
+            }
         }
 
         _state.Publish(SimConnectionState.Disconnected);
@@ -291,13 +303,19 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
     private void BecomeReady()
     {
         _log.LogInformation("The flight is ready: a flying camera and {Quiet} s with no unprompted changes", _readiness.Quiet.TotalSeconds);
+        _replay = false;
+        PublishLatest();
+
+        _ready = true;
+        _state.Publish(SimConnectionState.Connected);
+    }
+
+    private void PublishLatest()
+    {
         foreach ((ParameterId id, int? value) in _latest)
         {
             Publish(id, value);
         }
-
-        _ready = true;
-        _state.Publish(SimConnectionState.Connected);
     }
 
     private void Publish(ParameterId id, int? value) =>

@@ -58,7 +58,7 @@ public sealed class PanelCoordinator
         _onEffectFailed = onEffectFailed;
     }
 
-    /// <summary>Runs until <paramref name="ct"/> is cancelled, or faults if the sim or device stream does.</summary>
+    /// <summary>Runs until <paramref name="ct"/> is cancelled, or faults if the sim or device stream does or the device reports a fault.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
         Channel<BridgeEvent> events = Channel.CreateUnbounded<BridgeEvent>(new UnboundedChannelOptions { SingleReader = true });
@@ -82,6 +82,13 @@ public sealed class PanelCoordinator
 
             await foreach (BridgeEvent e in events.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
+                if (e is DeviceStateChanged { State: DeviceConnectionState.Faulted })
+                {
+                    // The link is dead (cable pulled, heartbeat lost) and a faulted connection
+                    // never recovers by itself. End the run so the owner can find the panel again.
+                    throw new IOException("The panel's link failed.");
+                }
+
                 DateTimeOffset now = _time.GetUtcNow();
                 PanelEffects effects = e switch
                 {
