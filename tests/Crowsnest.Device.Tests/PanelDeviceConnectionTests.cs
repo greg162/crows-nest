@@ -66,6 +66,29 @@ public class PanelDeviceConnectionTests
     }
 
     [Fact]
+    public async Task APanelThatRestartsIsAckedAndReportedConnectedAgain()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new FakePanel(deviceEnd);
+        Task panel = fake.RunAsync(CancellationToken.None);
+
+        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await device.ConnectAsync(CancellationToken.None);
+
+        List<DeviceConnectionState> states = [];
+        using IDisposable watch = device.ConnectionState.Subscribe(new Recorder(states));
+
+        // The panel crashed and came back: the port stayed open, and all the host sees is a hello.
+        await fake.SendHelloAsync();
+
+        await Eventually(() => fake.HelloAcks == 2 && states.Count == 3);
+        Assert.Equal([DeviceConnectionState.Connected, DeviceConnectionState.Handshaking, DeviceConnectionState.Connected], states);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(panel);
+    }
+
+    [Fact]
     public async Task DeviceInputReachesTheHostAsACoreEvent()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
@@ -161,6 +184,35 @@ public class PanelDeviceConnectionTests
         throw new InvalidOperationException("The input stream completed without producing an event.");
     }
 
+    private static async Task Eventually(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    /// <summary>Records every state the connection reports, from whichever thread reports it.</summary>
+    private sealed class Recorder(List<DeviceConnectionState> states) : IObserver<DeviceConnectionState>
+    {
+        public void OnNext(DeviceConnectionState value)
+        {
+            lock (states)
+            {
+                states.Add(value);
+            }
+        }
+
+        public void OnCompleted()
+        {
+        }
+
+        public void OnError(Exception error)
+        {
+        }
+    }
+
     private static async Task AwaitQuietly(Task task)
     {
         try
@@ -185,6 +237,30 @@ public class PanelDeviceConnectionTests
             System.Threading.Channels.Channel.CreateUnbounded<HostState>();
 
         private long _sequence;
+        private int _helloAcks;
+
+        public int HelloAcks => Volatile.Read(ref _helloAcks);
+
+        /// <summary>The hello the panel sends on boot, unasked, and in reply to the host's.</summary>
+        public ValueTask SendHelloAsync() =>
+            _writer.WriteAsync(new DeviceHello
+            {
+                DeviceType = "crowpanel-2.1-rotary",
+                FirmwareVersion = "0.1.0-test",
+                HardwareId = "a4cb8fdccc6c",
+                Capabilities = new WireCapabilities
+                {
+                    Shape = "round",
+                    Width = 480,
+                    Height = 480,
+                    Encoder = true,
+                    DetentsPerClick = 4,
+                    Touch = true,
+                    Buttons = 1,
+                    MaxFields = 3,
+                    Layouts = ["pair", "single", "dual"],
+                },
+            });
 
         /// <summary>Reproduces the first-bring-up firmware bug for the regression tests.</summary>
         public bool SaturatePongTimestampToInt32 { get; set; }
@@ -203,26 +279,11 @@ public class PanelDeviceConnectionTests
                 switch (message)
                 {
                     case HostHello:
-                        await _writer.WriteAsync(
-                            new DeviceHello
-                            {
-                                DeviceType = "crowpanel-2.1-rotary",
-                                FirmwareVersion = "0.1.0-test",
-                                HardwareId = "a4cb8fdccc6c",
-                                Capabilities = new WireCapabilities
-                                {
-                                    Shape = "round",
-                                    Width = 480,
-                                    Height = 480,
-                                    Encoder = true,
-                                    DetentsPerClick = 4,
-                                    Touch = true,
-                                    Buttons = 1,
-                                    MaxFields = 3,
-                                    Layouts = ["pair", "single", "dual"],
-                                },
-                            },
-                            ct);
+                        await SendHelloAsync();
+                        break;
+
+                    case HostHelloAck:
+                        Interlocked.Increment(ref _helloAcks);
                         break;
 
                     case HostPing ping:

@@ -14,10 +14,10 @@ public class ParameterRegistryTests
     public static TheoryData<string> ShippedIds => [.. Registry.All.Select(p => p.Id.Key)];
 
     [Fact]
-    public void TheDefaultRegistryHasComOneAndNavOne()
+    public void TheDefaultRegistryHasBothComsAndNavOne()
     {
-        // Phase 1 ships COM 1 but registers NAV 1 as well, to prove the generalisation (spec §13).
-        Assert.Equal(["com1.standby", "com1.active", "nav1.standby", "nav1.active"], Registry.All.Select(p => p.Id.Key));
+        // NAV 1 is registered without a page, to prove the generalisation (spec §13).
+        Assert.Equal(["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active"], Registry.All.Select(p => p.Id.Key));
     }
 
     [Theory]
@@ -95,11 +95,15 @@ public class ParameterRegistryTests
     }
 
     [Fact]
-    public void TheGatewaySubscribesToEveryParameterAndTheSpacingWatch()
+    public void TheGatewaySubscribesToEveryParameterAndTheSpacingWatches()
     {
-        Assert.Equal(["com1.standby", "com1.active", "nav1.standby", "nav1.active", "com1.spacing"], Registry.Subscriptions.Select(s => s.Id.Key));
+        Assert.Equal(
+            ["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active", "com1.spacing", "com2.spacing"],
+            Registry.Subscriptions.Select(s => s.Id.Key));
         Assert.Equal(Registry.Subscriptions.Count, Registry.Subscriptions.Select(s => s.Read.Name).Distinct().Count());
-        Assert.Equal(new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:1", "Enum", 1), Assert.Single(Registry.Watches).Read);
+        Assert.Equal(
+            [new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:1", "Enum", 1), new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:2", "Enum", 1)],
+            Registry.Watches.Select(w => w.Read));
     }
 
     [Fact]

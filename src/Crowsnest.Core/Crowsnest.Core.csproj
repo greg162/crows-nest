@@ -11,4 +11,9 @@
     <EmbeddedResource Include="Panels\**\*.parameters.json" />
   </ItemGroup>
 
+  <!-- Each module's pages (spec §5.5): Crowsnest.Core.Panels.Com.View.com.view.json. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Panels\**\*.view.json" />
+  </ItemGroup>
+
 </Project>

@@ -24,13 +24,14 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
 static const char *TAG = "crowsnest";
 
-#define FIRMWARE_VERSION "0.2.0"
+#define FIRMWARE_VERSION "0.3.2"
 #define DEVICE_TYPE "crowpanel-2.1-rotary"
 
 /* One outbound frame. Sized to the largest encoder output, which is the hello. */
@@ -58,6 +59,12 @@ static volatile bool s_host_seen;
  * rather than sit on the last frame looking alive but dead (found 2026-09-27). */
 #define HOST_SILENCE_MS 7000
 static TickType_t s_last_frame_at;
+
+/* Why the chip last reset, reported to the host once. The panic backtrace goes out UART0,
+ * which nothing reads on a desk, so without this a crash looks like a mystery reboot
+ * (found 2026-09-30). The full backtrace is in the core dump: idf.py coredump-info. */
+static esp_reset_reason_t s_reset_reason;
+static bool s_reset_reported;
 
 /* ---- Transmit ------------------------------------------------------------------------ */
 
@@ -117,8 +124,50 @@ static void send_hello(void)
 
 /* ---- Receive -------------------------------------------------------------------------- */
 
+static const char *crash_name(esp_reset_reason_t reason)
+{
+    switch (reason) {
+    case ESP_RST_PANIC:
+        return "a panic";
+    case ESP_RST_INT_WDT:
+        return "the interrupt watchdog";
+    case ESP_RST_TASK_WDT:
+        return "the task watchdog";
+    case ESP_RST_WDT:
+        return "a watchdog";
+    case ESP_RST_BROWNOUT:
+        return "a brownout";
+    case ESP_RST_CPU_LOCKUP:
+        return "a CPU lockup";
+    default:
+        return NULL; /* power-on, flashing, the reset button: nothing went wrong */
+    }
+}
+
+/* Sent with the first state frame, not the hello: by then the host is listening for logs. */
+static void report_reset_reason(void)
+{
+    if (s_reset_reported) {
+        return;
+    }
+    s_reset_reported = true;
+
+    const char *crash = crash_name(s_reset_reason);
+    if (crash == NULL) {
+        return;
+    }
+
+    char message[96];
+    snprintf(message, sizeof message, "the panel restarted after %s; run idf.py coredump-info for the backtrace", crash);
+
+    char frame[TX_FRAME_MAX];
+    link_send(frame, cn_link_encode_log(frame, sizeof frame, "error", message));
+}
+
 static void apply_state(const cn_state_t *state)
 {
+    report_reset_reason();
+
     /* rev is monotonic; anything not newer than what is on screen is a replay or a
      * reordered frame and is discarded (spec §6.1). */
     if (state->revision <= s_applied_revision) {
@@ -163,6 +212,9 @@ static void on_frame(const char *line, size_t len, void *user)
         break;
 
     case CN_MSG_HELLO_ACK:
+        /* A host that was already connected when this panel restarted answers its hello
+         * with only an ack, and then sends the screen. */
+        s_host_seen = true;
         bsp_display_brightness_set(message.as.hello_ack.brightness);
         break;
 
@@ -326,7 +378,8 @@ static void read_hardware_id(void)
 void app_main(void)
 {
     read_hardware_id();
-    ESP_LOGI(TAG, "Crowsnest %s on %s, id %s", FIRMWARE_VERSION, DEVICE_TYPE, s_hardware_id);
+    s_reset_reason = esp_reset_reason();
+    ESP_LOGI(TAG, "Crowsnest %s on %s, id %s, reset reason %d", FIRMWARE_VERSION, DEVICE_TYPE, s_hardware_id, (int)s_reset_reason);
 
     lv_display_t *display = bsp_display_start();
     if (display == NULL) {

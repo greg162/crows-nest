@@ -31,6 +31,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
     private Task? _readLoop;
     private Task? _heartbeat;
     private long _outstandingPings;
+    private volatile bool _handshakeDone;
     private bool _disposed;
 
     public PanelDeviceConnection(
@@ -98,15 +99,36 @@ public sealed class PanelDeviceConnection : IPanelDevice
         Capabilities = ProtocolCodec.ToCapabilities(hello);
         Identity = ProtocolCodec.ToIdentity(hello);
 
-        await Writer.WriteAsync(
+        await SendHelloAckAsync(ct);
+
+        _handshakeDone = true;
+        _state.OnNext(DeviceConnectionState.Connected);
+        _heartbeat = Task.Run(() => HeartbeatLoopAsync(_shutdown.Token), CancellationToken.None);
+    }
+
+    private ValueTask SendHelloAckAsync(CancellationToken ct) =>
+        Writer.WriteAsync(
             new HostHelloAck
             {
                 Config = new HostConfig { Brightness = _options.Brightness, Theme = _options.Theme },
             },
             ct);
 
+    /// <summary>
+    /// The panel restarted under an open port: a crash, or the reset button. The ESP32-S3's
+    /// USB serial port does not drop when the chip resets, so this hello is the only sign. The
+    /// panel is back on its waiting screen with nothing to show, so it gets its ack, and the
+    /// state goes back through Handshaking to Connected, which makes the coordinator re-send
+    /// the screen (found 2026-09-30).
+    /// </summary>
+    private async Task RejoinAsync(DeviceHello hello, CancellationToken ct)
+    {
+        Capabilities = ProtocolCodec.ToCapabilities(hello);
+        Identity = ProtocolCodec.ToIdentity(hello);
+
+        _state.OnNext(DeviceConnectionState.Handshaking);
+        await SendHelloAckAsync(ct);
         _state.OnNext(DeviceConnectionState.Connected);
-        _heartbeat = Task.Run(() => HeartbeatLoopAsync(_shutdown.Token), CancellationToken.None);
     }
 
     public Task RenderAsync(DisplayFrame frame, CancellationToken ct)
@@ -162,7 +184,18 @@ public sealed class PanelDeviceConnection : IPanelDevice
         {
             await foreach (byte[] frame in _reader!.ReadAllAsync(ct))
             {
-                if (ProtocolCodec.TryDecodeDevice(frame, out DeviceMessage? message) && message is not null)
+                if (!ProtocolCodec.TryDecodeDevice(frame, out DeviceMessage? message) || message is null)
+                {
+                    continue;
+                }
+
+                // A hello during the handshake may be a duplicate, as the panel repeats it every
+                // second until answered; ConnectAsync takes the first and acks it.
+                if (message is DeviceHello hello && _handshakeDone)
+                {
+                    await RejoinAsync(hello, ct);
+                }
+                else
                 {
                     Dispatch(message);
                 }
@@ -191,13 +224,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
         switch (message)
         {
             case DeviceHello hello:
-                // A second hello means the panel rebooted; take the newer capabilities.
-                if (!_hello.TrySetResult(hello))
-                {
-                    Capabilities = ProtocolCodec.ToCapabilities(hello);
-                    Identity = ProtocolCodec.ToIdentity(hello);
-                }
-
+                _hello.TrySetResult(hello);
                 break;
 
             case DeviceInputFrame input:

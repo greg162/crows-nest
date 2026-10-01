@@ -1,0 +1,11 @@
+// The COM module's pages (spec §5.5). One radio per screen, drawn in the firmware's "pair"
+// layout: active on top in green, standby below in a box, the title set into the frame.
+// A long press on the knob moves to the next page.
+{
+  "pages": [
+    { "id": "com1", "title": "COM1", "layout": "pair",
+      "fields": [ "com1.standby", "com1.active" ], "swapEvent": "COM_STBY_RADIO_SWAP" },
+    { "id": "com2", "title": "COM2", "layout": "pair",
+      "fields": [ "com2.standby", "com2.active" ], "swapEvent": "COM2_RADIO_SWAP" }
+  ]
+}

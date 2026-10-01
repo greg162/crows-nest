@@ -26,5 +26,31 @@
     // COM_1_SPACING_MODE_SWITCH.
     "kind": "watch", "id": "com1.spacing",
     "read": { "source": "simvar", "name": "COM SPACING MODE:1", "unit": "Enum" }
+  },
+
+  // COM 2: the same as COM 1 with the radio index changed. Unlike COM 1, its key events
+  // carry the number.
+  {
+    "id": "com2.standby", "label": "COM 2 STBY", "group": "com2", "unit": "kHz",
+    "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com2.spacing" },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
+    "read":    { "source": "simvar", "name": "COM STANDBY FREQUENCY:2", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "COM2_STBY_RADIO_SET_HZ", "encoding": "hz" },
+    "format":  "freq3"
+  },
+  {
+    "id": "com2.active", "label": "COM 2", "group": "com2", "unit": "kHz",
+    "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com2.spacing" },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
+    "read":    { "source": "simvar", "name": "COM ACTIVE FREQUENCY:2", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "COM2_RADIO_SET_HZ", "encoding": "hz" },
+    "format":  "freq3"
+  },
+  {
+    // Toggled in the cockpit with COM_2_SPACING_MODE_SWITCH.
+    "kind": "watch", "id": "com2.spacing",
+    "read": { "source": "simvar", "name": "COM SPACING MODE:2", "unit": "Enum" }
   }
 ]

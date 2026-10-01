@@ -471,7 +471,10 @@ lv_display_t *bsp_display_start(void)
 
     const lvgl_port_cfg_t lvgl_cfg = {
         .task_priority = 4,
-        .task_stack = 6144,
+        /* The software renderer draws on this stack. 6144 overflowed on fw 0.3.0 as soon as
+         * the P180 pair view redrew its rounded borders (core dump, 2026-09-30); esp_lvgl_port's
+         * own default is 7168. 12 KB leaves headroom for whatever the next view draws. */
+        .task_stack = 12288,
         /* Pinned to core 1, alone: lvgl_task is the only task allowed to touch LVGL
          * (spec §9.3), and the link and input tasks live on core 0. */
         .task_affinity = 1,

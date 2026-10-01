@@ -29,8 +29,9 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_USE_PERF_MONITOR=n
 # Font subsetting keeps a large numeral set cheap (spec §9.4). 48 px is the tuning digits;
-# 28 px labels; 14 px page furniture.
+# 28 px labels; 24 px the pair frame's title; 14 px page furniture.
 CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_28=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 CONFIG_LV_USE_LABEL=y
@@ -38,3 +39,9 @@ CONFIG_LV_USE_ARC=y
 
 # --- Logging ---------------------------------------------------------------------------
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- Crash diagnostics -------------------------------------------------------------------
+# The panic output goes to UART0, which nothing reads, so a crash is saved to the coredump
+# partition instead and read back over USB with idf.py coredump-info (found 2026-09-30).
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y

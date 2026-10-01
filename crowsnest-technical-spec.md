@@ -502,6 +502,8 @@ public sealed class PageNavigator
 
 `PageLayout` is a small closed set the firmware implements literally; the host chooses which one and fills it. A COM or NAV page is `ActiveStandbyPair`, autopilot altitude is `SingleValue`. This is what preserves the thin-client property while letting parameters with different shapes share one firmware.
 
+**View files (built 2026-09-30).** A panel module lists its pages in `Panels/<Module>/View/<module>.view.json`, embedded like the parameter files and read by `PanelViewReader`: each page names its `id`, `title`, `layout` (`pair`, `single` or `dual`, the wire's words), its `fields` (the tuned one first) and an optional `swapEvent`. `DefaultParameters.ViewResourceNames` gives the order. COM ships `com.view.json` with COM1 and COM2; a long press moves between them. Only the choice of layout and its contents cross to the firmware. No screen description goes over the wire.
+
 ### 5.6 Ports
 
 `namespace Crowsnest.Core.Application.Ports`
@@ -1107,6 +1109,8 @@ firmware/crowsnest-display/
 │   ├── crowsnest_input/              encoder + button shim          ← per-board
 │   ├── crowsnest_link/               framing, NDJSON, handshake     ← board-independent
 │   └── crowsnest_ui/                 LVGL layouts, fonts, theme     ← board-independent
+│       ├── crowsnest_ui.c            the screen: picks a view per frame; page dots, sim status, notice
+│       └── views/                    one file per layout: radio_pair.c, value_stack.c, waiting.c
 ├── main/app_main.c
 ├── sdkconfig.defaults.crowpanel_21
 └── sdkconfig.defaults.m5dial

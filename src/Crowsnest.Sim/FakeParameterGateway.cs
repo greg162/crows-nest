@@ -11,7 +11,7 @@ namespace Crowsnest.Sim;
 /// whole system with neither MSFS nor hardware present.
 ///
 /// It behaves the way the 2026-09 spikes saw MSFS 2024 behave: writes read back after a short
-/// latency; <c>COM_STBY_RADIO_SWAP</c> exchanges COM 1 active and standby;
+/// latency; <c>COM_STBY_RADIO_SWAP</c> and <c>COM2_RADIO_SWAP</c> exchange active and standby;
 /// <c>COM_1_SPACING_MODE_SWITCH</c> toggles <c>com1.spacing</c>, and switching to 25 kHz snaps
 /// both COM 1 values onto the 25 kHz grid (spec §5.3). It does not police spacing on writes,
 /// because MSFS does not either.
@@ -21,6 +21,8 @@ public sealed class FakeParameterGateway : ISimParameterGateway
     private static readonly ParameterId ComStandby = new("com1.standby");
     private static readonly ParameterId ComActive = new("com1.active");
     private static readonly ParameterId ComSpacing = new("com1.spacing");
+    private static readonly ParameterId Com2Standby = new("com2.standby");
+    private static readonly ParameterId Com2Active = new("com2.active");
     private static readonly ParameterId NavStandby = new("nav1.standby");
     private static readonly ParameterId NavActive = new("nav1.active");
 
@@ -43,6 +45,9 @@ public sealed class FakeParameterGateway : ISimParameterGateway
             [ComActive] = 127_850,
             [ComStandby] = 124_850,
             [ComSpacing] = 0,
+            [Com2Active] = 121_500,
+            [Com2Standby] = 119_875,
+            [new ParameterId("com2.spacing")] = 0,
             [NavActive] = 113_900,
             [NavStandby] = 110_300,
         };
@@ -100,6 +105,10 @@ public sealed class FakeParameterGateway : ISimParameterGateway
         {
             case "COM_STBY_RADIO_SWAP" or "COM1_RADIO_SWAP":
                 Swap(ComStandby, ComActive);
+                break;
+
+            case "COM2_RADIO_SWAP":
+                Swap(Com2Standby, Com2Active);
                 break;
 
             case "NAV1_RADIO_SWAP":

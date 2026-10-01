@@ -115,7 +115,8 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
         await StartAsync();
 
         Assert.Equal(
-            ["CAMERA STATE", "COM STANDBY FREQUENCY:1", "COM ACTIVE FREQUENCY:1", "NAV STANDBY FREQUENCY:1", "NAV ACTIVE FREQUENCY:1", "COM SPACING MODE:1"],
+            ["CAMERA STATE", "COM STANDBY FREQUENCY:1", "COM ACTIVE FREQUENCY:1", "COM STANDBY FREQUENCY:2", "COM ACTIVE FREQUENCY:2",
+             "NAV STANDBY FREQUENCY:1", "NAV ACTIVE FREQUENCY:1", "COM SPACING MODE:1", "COM SPACING MODE:2"],
             Client.Watches.Select(w => w.SimVar));
         Assert.All(Client.Watches, w => Assert.Equal(SimConnectPeriod.VisualFrame, w.Period));
         Assert.Equal("Hz", Client.Watches.Single(w => w.SimVar == "COM ACTIVE FREQUENCY:1").Unit);
@@ -197,7 +198,7 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
 
         await Eventually(() => _snapshots.Contains(new ParameterSnapshot(ComStandby, 124_850)), "the values again");
         Assert.Contains(new ParameterSnapshot(ComActive, 127_850), _snapshots);
-        Assert.Equal(6, Client.Watches.Count);
+        Assert.Equal(1 + DefaultParameters.Load().Registry.Subscriptions.Count, Client.Watches.Count); // the camera, then no duplicates
     }
 
     [Fact]

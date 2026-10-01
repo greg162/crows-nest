@@ -25,8 +25,9 @@ public class PanelEngineTests
 
     private static PanelEngine NewEngine(TuningOptions? options = null)
     {
+        // COM 1 and a NAV page: two pages, whatever else the shipped views add.
         PanelSetup setup = DefaultParameters.Load();
-        return new(setup.Registry, [.. setup.Pages, NavPage], DefaultInputActionMap.Instance, options ?? TuningOptions.Default, setup.Behaviours);
+        return new(setup.Registry, [setup.Pages.Single(p => p.Id == "com1"), NavPage], DefaultInputActionMap.Instance, options ?? TuningOptions.Default, setup.Behaviours);
     }
 
     /// <summary>An engine with the sim connected and reporting COM 1 at 121.500 / 118.000.</summary>
@@ -53,7 +54,7 @@ public class PanelEngineTests
         DisplayFrame frame = NewEngine().Render();
 
         Assert.Equal(SimConnectionState.Disconnected, frame.Sim);
-        Assert.Equal(new PageDescriptor("com1", "COM 1", PageLayout.ActiveStandbyPair, 0, 2), frame.Page);
+        Assert.Equal(new PageDescriptor("com1", "COM1", PageLayout.ActiveStandbyPair, 0, 2), frame.Page);
         Assert.Equal(["---.---", "---.---"], frame.Fields.Select(f => f.Text));
         Assert.Equal([FieldRole.Primary, FieldRole.Secondary], frame.Fields.Select(f => f.Role));
         Assert.All(frame.Fields, f => Assert.Null(f.CursorSpan));
