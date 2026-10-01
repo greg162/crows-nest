@@ -130,7 +130,7 @@ public sealed class PanelEngine : IPanelContext
     {
         _ackSequence = 0;
         _lastTurnAt = null;
-        return new PanelEffects([], Render());
+        return Redraw();
     }
 
     public PanelEffects OnSimConnection(SimConnectionState state)
@@ -141,7 +141,7 @@ public sealed class PanelEngine : IPanelContext
         }
 
         _sim = state;
-        return new PanelEffects([], Render());
+        return Redraw();
     }
 
     public PanelEffects OnSnapshot(ParameterSnapshot snapshot)
@@ -165,7 +165,7 @@ public sealed class PanelEngine : IPanelContext
             visible |= (outcome.DisplayChanged || IsPending(session) != wasPending) && IsOnScreen(snapshot.Id);
         }
 
-        return visible ? new PanelEffects([], Render()) : PanelEffects.None;
+        return visible ? Redraw() : PanelEffects.None;
     }
 
     public PanelEffects OnInput(DeviceInputEvent input, DateTimeOffset now)
@@ -223,7 +223,7 @@ public sealed class PanelEngine : IPanelContext
             }
 
             case BridgeCommand.CycleCursor:
-                return tuned.ToggleCursor().DisplayChanged ? new PanelEffects([], Render()) : PanelEffects.None;
+                return tuned.ToggleCursor().DisplayChanged ? Redraw() : PanelEffects.None;
 
             case BridgeCommand.SwapSlots when _pages.Current.SwapEvent is { } swap:
             {
@@ -241,14 +241,14 @@ public sealed class PanelEngine : IPanelContext
 
             case BridgeCommand.NextPage:
                 _pages.Next();
-                return new PanelEffects([], Render());
+                return Redraw();
 
             case BridgeCommand.PreviousPage:
                 _pages.Previous();
-                return new PanelEffects([], Render());
+                return Redraw();
 
             case BridgeCommand.GoToPage go when _pages.TryGoTo(go.PageId):
-                return new PanelEffects([], Render());
+                return Redraw();
 
             default:
                 return PanelEffects.None;
@@ -264,6 +264,8 @@ public sealed class PanelEngine : IPanelContext
         TuningOutcome outcome = session.ReplaceGrid(grid);
         _behaviourRedraw |= (outcome.DisplayChanged || IsPending(session) != wasPending) && IsOnScreen(id);
     }
+
+    private PanelEffects Redraw() => new([], Render());
 
     private bool IsOnScreen(ParameterId id) => _pages.Current.Fields.Contains(id);
 

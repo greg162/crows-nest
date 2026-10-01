@@ -32,8 +32,9 @@ public enum ScreenShape
 }
 
 /// <summary>
-/// What the device reported it can do. The host adapts to the device, not the reverse:
-/// a board with no touch never receives a page whose only swap gesture is a tap.
+/// What the device reported it can do. The host adapts to the device, not the reverse: once
+/// capability-driven layout selection exists (spec §5.7, not yet built), a board with no touch
+/// will never receive a page whose only swap gesture is a tap.
 /// </summary>
 public sealed record DeviceCapabilities(
     string DeviceType,

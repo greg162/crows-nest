@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Crowsnest.Core.Application;
 using Crowsnest.Core.Application.Ports;
@@ -38,7 +37,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
     private readonly TimeProvider _time;
     private readonly SimReadiness _readiness;
     private readonly Channel<ParameterSnapshot> _snapshots = Channel.CreateUnbounded<ParameterSnapshot>();
-    private readonly StateSubject<SimConnectionState> _state = new(SimConnectionState.Disconnected);
+    private readonly BehaviorSubject<SimConnectionState> _state = new(SimConnectionState.Disconnected);
     private readonly ConcurrentDictionary<ParameterId, (int Value, long SentAt)> _inFlight = new();
 
     private readonly Lock _gate = new();
@@ -74,7 +73,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
 
     public IObservable<SimConnectionState> ConnectionState => _state;
 
-    public IAsyncEnumerable<ParameterSnapshot> Snapshots => Read();
+    public IAsyncEnumerable<ParameterSnapshot> Snapshots => _snapshots.Reader.ReadAllAsync();
 
     public Task SubscribeAsync(IReadOnlyList<SimSubscription> subscriptions, CancellationToken ct)
     {
@@ -158,7 +157,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
             catch (Exception e)
             {
                 _log.LogError(e, "The sim session failed; reconnecting in {Backoff}", backoff);
-                _state.Publish(SimConnectionState.Faulted);
+                _state.OnNext(SimConnectionState.Faulted);
                 if (!await DelayAsync(Jitter(backoff), ct).ConfigureAwait(false))
                 {
                     break;
@@ -171,7 +170,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
             }
         }
 
-        _state.Publish(SimConnectionState.Disconnected);
+        _state.OnNext(SimConnectionState.Disconnected);
     }
 
     public ValueTask DisposeAsync()
@@ -185,7 +184,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
         _latest.Clear();
         _inFlight.Clear();
         _readiness.Reset(_time.GetUtcNow());
-        _state.Publish(SimConnectionState.Connecting);
+        _state.OnNext(SimConnectionState.Connecting);
 
         client.WatchValue(CameraId, "CAMERA STATE", "Enum", SimConnectPeriod.VisualFrame);
         lock (_gate)
@@ -237,7 +236,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
             }
         }
 
-        _state.Publish(SimConnectionState.Disconnected);
+        _state.OnNext(SimConnectionState.Disconnected);
     }
 
     /// <returns>True when the session is over.</returns>
@@ -256,7 +255,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
                 {
                     _ready = false;
                     _log.LogInformation("Camera {Camera} is not a flying view; holding values until the next flight is ready", (int)camera.Raw);
-                    _state.Publish(SimConnectionState.Connecting);
+                    _state.OnNext(SimConnectionState.Connecting);
                 }
 
                 break;
@@ -307,7 +306,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
         PublishLatest();
 
         _ready = true;
-        _state.Publish(SimConnectionState.Connected);
+        _state.OnNext(SimConnectionState.Connected);
     }
 
     private void PublishLatest()
@@ -363,12 +362,4 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
 
     private static TimeSpan Jitter(TimeSpan backoff) =>
         backoff * (0.8 + (Random.Shared.NextDouble() * 0.4));
-
-    private async IAsyncEnumerable<ParameterSnapshot> Read([EnumeratorCancellation] CancellationToken ct = default)
-    {
-        await foreach (ParameterSnapshot snapshot in _snapshots.Reader.ReadAllAsync(ct).ConfigureAwait(false))
-        {
-            yield return snapshot;
-        }
-    }
 }

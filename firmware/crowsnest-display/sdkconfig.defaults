@@ -35,7 +35,6 @@ CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_28=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 CONFIG_LV_USE_LABEL=y
-CONFIG_LV_USE_ARC=y
 
 # --- Logging ---------------------------------------------------------------------------
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y

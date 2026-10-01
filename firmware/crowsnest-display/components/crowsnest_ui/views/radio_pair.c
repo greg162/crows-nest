@@ -89,9 +89,6 @@ void radio_pair_render(const cn_state_t *state)
 {
     lv_label_set_text(s_title, state->page_title);
 
-    /* The title is re-centred because its width follows the text. */
-    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 0);
-
     const cn_field_t *active = field_with_role(state, CN_ROLE_SECONDARY);
     if (active != NULL) {
         lv_label_set_text(s_active, active->text);

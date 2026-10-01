@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Crowsnest.Core.Application;
 using Crowsnest.Core.Application.Ports;
-using Crowsnest.Device.Internal;
 using Crowsnest.Device.Protocol;
 using Crowsnest.Device.Transport;
 

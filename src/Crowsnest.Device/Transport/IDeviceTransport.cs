@@ -13,6 +13,4 @@ public interface IDeviceTransport : IAsyncDisposable
     PipeReader Input { get; }
 
     PipeWriter Output { get; }
-
-    IObservable<bool> IsConnected { get; }
 }

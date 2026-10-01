@@ -7,59 +7,12 @@ using Crowsnest.Core.Domain;
 
 namespace Crowsnest.Core.Tests.Fakes;
 
-/// <summary>An observable with a current value, replayed to each new subscriber.</summary>
-internal sealed class StateSubject<T>(T initial) : IObservable<T>
-{
-    private readonly Lock _gate = new();
-    private readonly List<IObserver<T>> _observers = [];
-    private T _value = initial;
-
-    public void Publish(T value)
-    {
-        IObserver<T>[] observers;
-        lock (_gate)
-        {
-            _value = value;
-            observers = [.. _observers];
-        }
-
-        foreach (IObserver<T> observer in observers)
-        {
-            observer.OnNext(value);
-        }
-    }
-
-    public IDisposable Subscribe(IObserver<T> observer)
-    {
-        T value;
-        lock (_gate)
-        {
-            _observers.Add(observer);
-            value = _value;
-        }
-
-        observer.OnNext(value);
-        return new Unsubscriber(() =>
-        {
-            lock (_gate)
-            {
-                _observers.Remove(observer);
-            }
-        });
-    }
-
-    private sealed class Unsubscriber(Action dispose) : IDisposable
-    {
-        public void Dispose() => dispose();
-    }
-}
-
 /// <summary>A sim that records what it is asked to do and reports what the test pushes.</summary>
 internal sealed class FakeSimGateway : ISimParameterGateway
 {
     private readonly Channel<ParameterSnapshot> _snapshots = Channel.CreateUnbounded<ParameterSnapshot>();
 
-    public StateSubject<SimConnectionState> State { get; } = new(SimConnectionState.Disconnected);
+    public BehaviorSubject<SimConnectionState> State { get; } = new(SimConnectionState.Disconnected);
 
     public IObservable<SimConnectionState> ConnectionState => State;
 
@@ -114,7 +67,7 @@ internal sealed class FakePanelDevice : IPanelDevice
     private readonly Channel<DeviceInputEvent> _inputs = Channel.CreateUnbounded<DeviceInputEvent>();
     private long _sequence;
 
-    public StateSubject<DeviceConnectionState> State { get; } = new(DeviceConnectionState.Connected);
+    public BehaviorSubject<DeviceConnectionState> State { get; } = new(DeviceConnectionState.Connected);
 
     public IObservable<DeviceConnectionState> ConnectionState => State;
 

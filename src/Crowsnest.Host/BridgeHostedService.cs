@@ -16,7 +16,7 @@ namespace Crowsnest.Host;
 ///
 /// The spec's separate <c>DeviceHostedService</c> is folded in here: the coordinator is built
 /// around one connected device, so finding the device and running the coordinator are one
-/// loop. Multiple panels (§6.5) will split them again.
+/// loop. Multiple panels (§6.2) will split them again.
 /// </summary>
 public sealed partial class BridgeHostedService(
     PanelSetup setup,

@@ -608,9 +608,9 @@ Gesture bindings become configuration. The v1 map: turn → `AdjustValue`, short
 - **Every session is ticked**, not only the current page's: tuning COM and swiping away inside the debounce must not strand the write. With a handful of parameters this costs nothing.
 - **Swap flushes first.** A tap with a dialled value not yet written sends the write, then the swap event, so the sim swaps what the pilot sees (`TuningSession.Flush`). The swap's result arrives as two ordinary snapshots.
 - **Frames.** The knob always tunes the page's first field, and only that field carries a cursor, resolved through `CursorSpans` and omitted while the value is a placeholder. `Pending` follows `AwaitingConfirmation`, and a change to it redraws even when the text is unchanged (confirmation, a rejection back to the same value). Every new input sequence is acknowledged with a frame, even an ignored gesture; a replayed sequence is not. A device returning to `Connected` gets a full frame.
-- **Acceleration timing** uses the device's timestamps between turns, not the host clock; session timers use the host clock.
+- **Acceleration timing** uses the time between input events as stamped on them, which today is the host's receive time (`PanelDeviceConnection` stamps each frame as it arrives); session timers use the host clock. A device-side timestamp would remove USB jitter, but has not been needed.
 - **COM spacing, implemented 2026-09-27.** `com.parameters.json` has a watch entry (`"kind": "watch"`, id and read binding only) for `COM SPACING MODE:1`. `ISimParameterGateway.SubscribeAsync` takes `ParameterRegistry.Subscriptions` — every parameter plus every watch, as `SimSubscription(Id, Read)` — replacing `AllReadBindings`. A minimal `IPanelBehaviour` (`OnSnapshot` only; `OnCommand` waits for the transponder) sees every snapshot before the sessions do, through an `IPanelContext` that can `ReplaceGrid`. `ComSpacingBehaviour` is both the `comChannel` grid factory and the behaviour: the factory notes which parameters name which watch in `spacingFrom`, `Validate` fails startup if the watch does not exist, and a mode snapshot (0 = 25 kHz, 1 = 8.33, anything else ignored) rebuilds those grids. `TuningSession.ReplaceGrid` drops a value still being dialled rather than snapping it; the sim snaps its own values and reports them as ordinary changes. `DefaultParameters.Load()` now returns a `PanelSetup` (registry, pages, behaviours).
-- **Not yet:** capability-driven layout selection, multiple devices (§6.5), and notices (e.g. surfacing a rejection).
+- **Not yet:** capability-driven layout selection, multiple devices (§6.2), and notices (e.g. surfacing a rejection).
 
 ### 5.8 Panel modules
 
@@ -1041,7 +1041,7 @@ public sealed class StartupRegistration;                // HKCU\...\Run
 public sealed class SingleInstanceGuard;                // named mutex + pipe activation
 ```
 
-**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `DefaultParameters.Load()`, the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.5) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
+**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `DefaultParameters.Load()`, the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.2) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
 
 Settings live in `%LOCALAPPDATA%\Crowsnest\settings.json`; logs roll into `%LOCALAPPDATA%\Crowsnest\logs\` with seven-day retention via Serilog, plus an in-memory ring buffer sink so the diagnostics window can tail without touching disk.
 
@@ -1133,10 +1133,12 @@ Tasks:
 
 | Task | Core | Responsibility |
 |---|---|---|
-| `lvgl_task` | 1 | `lv_timer_handler()` every 5 ms; the only task that touches LVGL |
-| `link_rx_task` | 0 | UART read, frame split, parse, enqueue |
+| `lvgl_task` | 1 | `lv_timer_handler()` every 5 ms, under the LVGL lock |
+| `link_rx_task` | 0 | USB-Serial/JTAG read, frame split, parse, and render under the LVGL lock |
 | `link_tx_task` | 0 | Drains the outbound queue |
-| `input_task` | 0 | Polls `crowsnest_input`, emits detent and button events |
+| `input_task` | 0 | Polls `crowsnest_input`, emits detent, button and tap events |
+
+Any task may call LVGL, but only while holding the LVGL lock (`bsp_display_lock`, esp_lvgl_port's recursive mutex). Earlier drafts said `lvgl_task` was the only task that touched LVGL; the firmware has always rendered from `link_rx_task` under the lock instead, which is equally safe and saves a queue.
 
 The firmware implements the three `PageLayout` variants and nothing else. It receives formatted strings with cursor spans and renders them. It has no concept of frequencies, altitudes, or units — which is precisely why adding NAV and autopilot support costs nothing on this side.
 

@@ -118,7 +118,7 @@ int crowsnest_encoder_read_detents(void)
 bool crowsnest_button_is_pressed(void)
 {
     /* The knob button is expander P5 with a pull-up, so pressed reads low. There is no
-     * interrupt line for it, which is why §9.3 gives input_task a 20 ms poll. */
+     * interrupt line for it, which is why §9.2 gives input_task a 20 ms poll. */
     uint8_t value = 0xFF;
     if (bsp_expander_read(&value) != ESP_OK) {
         /* A missed read, not a released button: "false" here would turn one long press into

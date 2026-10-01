@@ -1,11 +1,13 @@
-namespace Crowsnest.Device.Internal;
+namespace Crowsnest.Core.Application;
 
 /// <summary>
 /// The smallest thing that satisfies <see cref="IObservable{T}"/> for a current-value
-/// stream. Crowsnest.Core is BCL-only, so the port cannot hand out a Rx type, and one
-/// observable per connection does not justify taking System.Reactive as a dependency.
+/// stream, as the ports' connection states are. Crowsnest.Core is BCL-only, so a port cannot
+/// hand out an Rx type, and a few observables do not justify taking System.Reactive as a
+/// dependency. The current value is replayed to each new subscriber; publishing the value it
+/// already holds does nothing.
 /// </summary>
-internal sealed class BehaviorSubject<T>(T initial) : IObservable<T>
+public sealed class BehaviorSubject<T>(T initial) : IObservable<T>
 {
     private readonly Lock _gate = new();
     private readonly List<IObserver<T>> _observers = [];

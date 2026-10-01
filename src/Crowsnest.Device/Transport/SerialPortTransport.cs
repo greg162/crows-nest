@@ -1,6 +1,5 @@
 using System.IO.Pipelines;
 using System.IO.Ports;
-using Crowsnest.Device.Internal;
 
 namespace Crowsnest.Device.Transport;
 
@@ -11,7 +10,6 @@ namespace Crowsnest.Device.Transport;
 /// </summary>
 public sealed class SerialPortTransport(string portName, int baudRate = 921_600) : IDeviceTransport
 {
-    private readonly BehaviorSubject<bool> _connected = new(false);
     private SerialPort? _port;
     private PipeReader? _input;
     private PipeWriter? _output;
@@ -21,8 +19,6 @@ public sealed class SerialPortTransport(string portName, int baudRate = 921_600)
     public PipeReader Input => _input ?? throw new InvalidOperationException("Connect first.");
 
     public PipeWriter Output => _output ?? throw new InvalidOperationException("Connect first.");
-
-    public IObservable<bool> IsConnected => _connected;
 
     public Task ConnectAsync(CancellationToken ct)
     {
@@ -50,14 +46,11 @@ public sealed class SerialPortTransport(string portName, int baudRate = 921_600)
         _port = port;
         _input = PipeReader.Create(port.BaseStream, new StreamPipeReaderOptions(leaveOpen: true));
         _output = PipeWriter.Create(port.BaseStream, new StreamPipeWriterOptions(leaveOpen: true));
-        _connected.OnNext(true);
         return Task.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
     {
-        _connected.OnNext(false);
-        _connected.OnCompleted();
 
         // Teardown runs after the cable is pulled, when every one of these can throw
         // ("A device which does not exist was specified"): completing the writer flushes

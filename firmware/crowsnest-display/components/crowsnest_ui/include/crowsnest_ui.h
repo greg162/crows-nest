@@ -5,7 +5,7 @@
  * mentions a pin. It implements the three PageLayout variants and nothing else, rendering
  * pre-formatted strings with a character span underlined. It has no concept of
  * frequencies, altitudes or units, which is precisely why adding NAV and the autopilot
- * costs nothing on this side (spec §5.6).
+ * costs nothing on this side (spec §6.1).
  *
  * Every function here must be called with the LVGL lock held.
  */

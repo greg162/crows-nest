@@ -55,8 +55,9 @@ public sealed record ParameterDefinition
     public CanonicalUnit Unit { get; }
 
     /// <summary>
-    /// The legal values. <c>init</c> so a panel behaviour can swap it at runtime with <c>with</c>,
-    /// as COM does when the spacing mode changes (spec §5.8).
+    /// The legal values as loaded. <c>init</c> so <see cref="Tuning.TuningSession.ReplaceGrid"/>
+    /// can swap it with <c>with</c> when a panel behaviour asks, as COM does when the spacing mode
+    /// changes (spec §5.8). The session's copy is then the live one; this one is not updated.
     /// </summary>
     public IValueGrid Grid { get; init; }
 

@@ -8,7 +8,7 @@ namespace Crowsnest.Core.Domain.Formatting;
 ///
 /// With two decimals the last kHz digit is dropped, not rounded, the way a two-decimal radio
 /// display shows it. That is only lossless on a grid of 10 kHz multiples, so never use
-/// <c>freq2</c> for COM: every 8.33 channel name would lose its third digit (spec §7.3).
+/// <c>freq2</c> for COM: every 8.33 channel name would lose its third digit (spec §5.2).
 /// </summary>
 public sealed class FrequencyFormatter : IValueFormatter
 {

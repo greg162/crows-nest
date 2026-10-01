@@ -370,7 +370,7 @@ static esp_err_t rgb_panel_init(void)
         .num_fbs = 1,
         /* The RGB peripheral streams the framebuffer straight out of PSRAM. A bounce
          * buffer in internal RAM keeps the fetch off the critical path, which is what
-         * stops the panel tearing whenever anything else touches PSRAM (spec §9.6). */
+         * stops the panel tearing whenever anything else touches PSRAM (spec §3.1, §9.5). */
         .bounce_buffer_size_px = BSP_LCD_H_RES * 10,
         .de_gpio_num = GPIO_NUM_40,
         .pclk_gpio_num = GPIO_NUM_41,
@@ -488,8 +488,8 @@ lv_display_t *bsp_display_start(void)
          * the P180 pair view redrew its rounded borders (core dump, 2026-09-30); esp_lvgl_port's
          * own default is 7168. 12 KB leaves headroom for whatever the next view draws. */
         .task_stack = 12288,
-        /* Pinned to core 1, alone: lvgl_task is the only task allowed to touch LVGL
-         * (spec §9.3), and the link and input tasks live on core 0. */
+        /* Pinned to core 1, alone; the link and input tasks live on core 0 (spec §9.3).
+         * Other tasks may still call LVGL while holding bsp_display_lock. */
         .task_affinity = 1,
         .timer_period_ms = 5,
         .task_max_sleep_ms = 500,

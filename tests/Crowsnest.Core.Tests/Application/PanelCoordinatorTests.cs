@@ -73,7 +73,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     private async Task StartTuned()
     {
         Start();
-        _sim.State.Publish(SimConnectionState.Connected);
+        _sim.State.OnNext(SimConnectionState.Connected);
         _sim.Push(ComStandby, 121_500);
         _sim.Push(ComActive, 118_000);
         await Eventually(() => _device.Latest?.Fields[1].Text == "118.000", "COM 1 to show");
@@ -145,8 +145,8 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
         await StartTuned();
         int before = _device.Frames.Count;
 
-        _device.State.Publish(DeviceConnectionState.Disconnected);
-        _device.State.Publish(DeviceConnectionState.Connected);
+        _device.State.OnNext(DeviceConnectionState.Disconnected);
+        _device.State.OnNext(DeviceConnectionState.Connected);
 
         await Eventually(() => _device.Frames.Count > before, "a frame after reconnecting");
         Assert.Equal("121.500", _device.Latest!.Fields[0].Text);
@@ -169,7 +169,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     {
         await StartTuned();
 
-        _device.State.Publish(DeviceConnectionState.Faulted);
+        _device.State.OnNext(DeviceConnectionState.Faulted);
 
         await Assert.ThrowsAsync<IOException>(() => _run!.WaitAsync(TimeSpan.FromSeconds(5)));
         _run = null;

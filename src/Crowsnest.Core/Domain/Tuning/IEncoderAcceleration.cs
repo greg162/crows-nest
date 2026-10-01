@@ -7,7 +7,7 @@ namespace Crowsnest.Core.Domain.Tuning;
 public interface IEncoderAcceleration
 {
     /// <param name="detents">Signed clicks since the last report.</param>
-    /// <param name="sinceLastDetent">Time since the previous report, as the device measured it.</param>
+    /// <param name="sinceLastDetent">Time since the previous report, from the input events' timestamps (today the host's receive time).</param>
     /// <returns>Signed steps to apply. Must have the same sign as <paramref name="detents"/>, or be 0.</returns>
     int Scale(int detents, TimeSpan sinceLastDetent);
 }

@@ -1,5 +1,5 @@
-using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Crowsnest.Core.Application;
 using Crowsnest.Core.Application.Ports;
 using Crowsnest.Core.Domain;
 using Crowsnest.Core.Panels.Com;
@@ -30,7 +30,7 @@ public sealed class FakeParameterGateway : ISimParameterGateway
     private readonly Dictionary<ParameterId, int> _values;
     private readonly HashSet<ParameterId> _subscribed = [];
     private readonly Channel<ParameterSnapshot> _snapshots = Channel.CreateUnbounded<ParameterSnapshot>();
-    private readonly StateSubject<SimConnectionState> _state = new(SimConnectionState.Connecting);
+    private readonly BehaviorSubject<SimConnectionState> _state = new(SimConnectionState.Connecting);
     private readonly TimeProvider _time;
 
     /// <param name="latency">Write to read-back. Spike 0(a) measured 10-16 ms; just after flight load, up to ~590 ms.</param>
@@ -60,7 +60,7 @@ public sealed class FakeParameterGateway : ISimParameterGateway
 
     public IObservable<SimConnectionState> ConnectionState => _state;
 
-    public IAsyncEnumerable<ParameterSnapshot> Snapshots => Read();
+    public IAsyncEnumerable<ParameterSnapshot> Snapshots => _snapshots.Reader.ReadAllAsync();
 
     public Task SubscribeAsync(IReadOnlyList<SimSubscription> subscriptions, CancellationToken ct)
     {
@@ -78,7 +78,7 @@ public sealed class FakeParameterGateway : ISimParameterGateway
             }
         }
 
-        _state.Publish(SimConnectionState.Connected);
+        _state.OnNext(SimConnectionState.Connected);
         return Task.CompletedTask;
     }
 
@@ -162,7 +162,7 @@ public sealed class FakeParameterGateway : ISimParameterGateway
     public ValueTask DisposeAsync()
     {
         _snapshots.Writer.TryComplete();
-        _state.Publish(SimConnectionState.Disconnected);
+        _state.OnNext(SimConnectionState.Disconnected);
         return ValueTask.CompletedTask;
     }
 
@@ -196,14 +196,6 @@ public sealed class FakeParameterGateway : ISimParameterGateway
         if (_subscribed.Contains(id))
         {
             _snapshots.Writer.TryWrite(new ParameterSnapshot(id, value));
-        }
-    }
-
-    private async IAsyncEnumerable<ParameterSnapshot> Read([EnumeratorCancellation] CancellationToken ct = default)
-    {
-        await foreach (ParameterSnapshot snapshot in _snapshots.Reader.ReadAllAsync(ct).ConfigureAwait(false))
-        {
-            yield return snapshot;
         }
     }
 }

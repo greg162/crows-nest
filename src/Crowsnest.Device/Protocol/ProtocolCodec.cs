@@ -6,7 +6,8 @@ namespace Crowsnest.Device.Protocol;
 
 /// <summary>
 /// Translates between Core's display contract and the wire types. This is the only
-/// place that knows the protocol's spelling of a layout or a connection state.
+/// place that knows the protocol's spelling of a role or a connection state; layout names
+/// are shared with the view files, so they live in <see cref="PageLayoutNames"/>.
 /// </summary>
 public static class ProtocolCodec
 {
@@ -52,13 +53,7 @@ public static class ProtocolCodec
         };
     }
 
-    public static string ToWire(PageLayout layout) => layout switch
-    {
-        PageLayout.ActiveStandbyPair => "pair",
-        PageLayout.SingleValue => "single",
-        PageLayout.DualValue => "dual",
-        _ => throw new ArgumentOutOfRangeException(nameof(layout)),
-    };
+    public static string ToWire(PageLayout layout) => PageLayoutNames.Of(layout);
 
     public static string ToWire(FieldRole role) => role switch
     {
@@ -77,13 +72,7 @@ public static class ProtocolCodec
         _ => throw new ArgumentOutOfRangeException(nameof(state)),
     };
 
-    public static PageLayout? ParseLayout(string? wire) => wire switch
-    {
-        "pair" => PageLayout.ActiveStandbyPair,
-        "single" => PageLayout.SingleValue,
-        "dual" => PageLayout.DualValue,
-        _ => null,
-    };
+    public static PageLayout? ParseLayout(string? wire) => PageLayoutNames.Parse(wire);
 
     public static DeviceCapabilities ToCapabilities(DeviceHello hello)
     {
@@ -142,8 +131,9 @@ public static class ProtocolCodec
     };
 
     /// <summary>
-    /// Decodes one device frame. Returns false for malformed JSON, an unknown message type
-    /// or a frame from a future protocol version — all of which are ignored, never fatal.
+    /// Decodes one device frame. Returns false for malformed JSON or an unknown message type,
+    /// both of which are ignored, never fatal. The frame's <c>v</c> is not checked: unknown
+    /// fields are ignored instead, so the two ends version independently (spec §6.1).
     /// </summary>
     public static bool TryDecodeDevice(ReadOnlySpan<byte> utf8Json, out DeviceMessage? message)
     {

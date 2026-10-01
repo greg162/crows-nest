@@ -14,8 +14,8 @@ namespace Crowsnest.Core.Application;
 /// </code>
 ///
 /// <c>layout</c> is one of the names the firmware draws: <c>pair</c>, <c>single</c> or
-/// <c>dual</c>, the same words the wire uses. The first field is the one the knob tunes; on a
-/// <c>pair</c> page that is the standby value. <c>swapEvent</c> is optional. Comments and
+/// <c>dual</c>, in lower case, the same words the wire uses (<see cref="PageLayoutNames"/>).
+/// The first field is the one the knob tunes; on a <c>pair</c> page that is the standby value. <c>swapEvent</c> is optional. Comments and
 /// trailing commas are allowed. Whether the fields are registered is checked by
 /// <see cref="PanelEngine"/>, which has the registry.
 /// </summary>
@@ -26,13 +26,6 @@ public static class PanelViewReader
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
-    };
-
-    private static readonly Dictionary<string, PageLayout> Layouts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["pair"] = PageLayout.ActiveStandbyPair,
-        ["single"] = PageLayout.SingleValue,
-        ["dual"] = PageLayout.DualValue,
     };
 
     /// <exception cref="InvalidDataException">The file is malformed or a page is incomplete.</exception>
@@ -68,9 +61,8 @@ public static class PanelViewReader
 
         string title = string.IsNullOrWhiteSpace(page.Title) ? throw Invalid("\"title\" is required") : page.Title;
 
-        PageLayout layout = page.Layout is not null && Layouts.TryGetValue(page.Layout, out PageLayout l)
-            ? l
-            : throw Invalid($"\"layout\" is \"{page.Layout}\", which is not one of {string.Join(", ", Layouts.Keys)}");
+        PageLayout layout = PageLayoutNames.Parse(page.Layout)
+            ?? throw Invalid($"\"layout\" is \"{page.Layout}\", which is not one of {string.Join(", ", PageLayoutNames.All)}");
 
         if (page.Fields is not { Length: > 0 } fields || fields.Any(string.IsNullOrWhiteSpace))
         {

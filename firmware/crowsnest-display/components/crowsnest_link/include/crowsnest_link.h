@@ -61,7 +61,9 @@ typedef struct {
     cn_role_t role;
     char      label[CN_LABEL_MAX];
     char      text[CN_TEXT_MAX];
-    /* [start, end) into `text`, in characters. Both -1 when the field has no cursor. */
+    /* [start, end) into `text`, in characters. Both -1 when the field has no cursor.
+     * Applied as byte offsets, which is the same thing while the host sends ASCII, as it
+     * does today; a multi-byte glyph such as "°" would need converting first. */
     int16_t cursor_start;
     int16_t cursor_end;
     bool    pending;
