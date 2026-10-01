@@ -31,7 +31,7 @@
 
 static const char *TAG = "crowsnest";
 
-#define FIRMWARE_VERSION "0.3.2"
+#define FIRMWARE_VERSION "0.3.3"
 #define DEVICE_TYPE "crowpanel-2.1-rotary"
 
 /* One outbound frame. Sized to the largest encoder output, which is the hello. */
@@ -59,6 +59,22 @@ static volatile bool s_host_seen;
  * rather than sit on the last frame looking alive but dead (found 2026-09-27). */
 #define HOST_SILENCE_MS 7000
 static TickType_t s_last_frame_at;
+
+/* False if the display failed to start. LVGL's lock does not exist then, and taking it
+ * asserts, so every screen update goes through ui_lock(). */
+static bool s_display_ready;
+
+/* Takes the LVGL lock for a screen update, waiting as long as a redraw takes (0 = forever).
+ * Waiting is safe: the LVGL task never waits on the link or input tasks. Returns false,
+ * without locking, when there is no display to update. */
+static bool ui_lock(void)
+{
+    if (!s_display_ready) {
+        return false;
+    }
+    bsp_display_lock(0);
+    return true;
+}
 
 /* Why the chip last reset, reported to the host once. The panic backtrace goes out UART0,
  * which nothing reads on a desk, so without this a crash looks like a mystery reboot
@@ -173,12 +189,15 @@ static void apply_state(const cn_state_t *state)
     if (state->revision <= s_applied_revision) {
         return;
     }
-    s_applied_revision = state->revision;
 
-    if (bsp_display_lock(200)) {
+    /* Counted only once it is on screen. With a 200 ms lock timeout, a busy LVGL task cost
+     * the frame for good, since the host only sends one when something changes (found in
+     * review, 2026-09-30). */
+    if (ui_lock()) {
         crowsnest_ui_render(state);
         bsp_display_unlock();
     }
+    s_applied_revision = state->revision;
 }
 
 static void on_frame(const char *line, size_t len, void *user)
@@ -191,7 +210,11 @@ static void on_frame(const char *line, size_t len, void *user)
         return;
     }
 
+    /* Any frame means a host is there, and re-arms the silence check. Only a hello used to,
+     * so a host that stalled past HOST_SILENCE_MS and then recovered left the check off for
+     * good, and its later death went unnoticed (found in review, 2026-09-30). */
     s_last_frame_at = xTaskGetTickCount();
+    s_host_seen = true;
 
     switch (message.type) {
     case CN_MSG_HELLO:
@@ -204,6 +227,11 @@ static void on_frame(const char *line, size_t len, void *user)
 
         /* The console is not on USB (see the README), so this is the only place the pilot
          * can learn why taps do nothing. */
+        if (!s_display_ready) {
+            char frame[TX_FRAME_MAX];
+            link_send(frame, cn_link_encode_log(frame, sizeof frame, "error",
+                                                "the display did not start; see the UART0 console for why"));
+        }
         if (!crowsnest_touch_available()) {
             char frame[TX_FRAME_MAX];
             link_send(frame, cn_link_encode_log(frame, sizeof frame, "warn",
@@ -229,7 +257,7 @@ static void on_frame(const char *line, size_t len, void *user)
         break;
 
     case CN_MSG_NOTICE:
-        if (bsp_display_lock(200)) {
+        if (ui_lock()) {
             crowsnest_ui_show_notice(message.as.notice.kind);
             bsp_display_unlock();
         }
@@ -249,7 +277,7 @@ static void host_lost(void)
     s_applied_revision = -1;
     cn_link_rx_init(&s_rx); /* drop any half-received frame */
 
-    if (bsp_display_lock(200)) {
+    if (ui_lock()) {
         crowsnest_ui_show_waiting(s_hardware_id);
         bsp_display_unlock();
     }
@@ -389,6 +417,7 @@ void app_main(void)
         crowsnest_ui_show_waiting(s_hardware_id);
         bsp_display_unlock();
         ESP_ERROR_CHECK(bsp_display_backlight_on());
+        s_display_ready = true;
     }
 
     ESP_ERROR_CHECK(crowsnest_input_init());

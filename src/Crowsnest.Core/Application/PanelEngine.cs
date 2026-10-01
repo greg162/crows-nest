@@ -121,6 +121,18 @@ public sealed class PanelEngine : IPanelContext
             AckSequence: _ackSequence);
     }
 
+    /// <summary>
+    /// A device has (re)joined: the first connection, or a panel that restarted under an open
+    /// port. A restarted panel numbers its inputs from 1 again and has a blank screen, so the ack
+    /// and the acceleration clock start over and it gets the current frame.
+    /// </summary>
+    public PanelEffects OnDeviceJoined()
+    {
+        _ackSequence = 0;
+        _lastTurnAt = null;
+        return new PanelEffects([], Render());
+    }
+
     public PanelEffects OnSimConnection(SimConnectionState state)
     {
         if (state == _sim)
@@ -222,6 +234,7 @@ public sealed class PanelEngine : IPanelContext
                     sim.Add(new SimCommand.Write(tuned.Parameter.Id, value));
                 }
 
+                tuned.AcceptNextSimValue();
                 sim.Add(new SimCommand.Invoke(swap));
                 return new PanelEffects(sim, null);
             }

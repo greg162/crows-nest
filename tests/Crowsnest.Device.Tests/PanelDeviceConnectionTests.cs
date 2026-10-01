@@ -89,6 +89,26 @@ public class PanelDeviceConnectionTests
     }
 
     [Fact]
+    public async Task ALinkThePanelClosesFaultsAtOnceWithTheReason()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        using var stopPanel = new CancellationTokenSource();
+        await using var fake = new FakePanel(deviceEnd);
+        Task panel = fake.RunAsync(stopPanel.Token);
+
+        // A slow heartbeat, so only the end of the stream can explain a quick Faulted.
+        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake with { PingInterval = TimeSpan.FromMinutes(1) });
+        await device.ConnectAsync(CancellationToken.None);
+
+        await stopPanel.CancelAsync();
+        await AwaitQuietly(panel);
+        await deviceEnd.DisposeAsync(); // completes the panel's side of the pipe: end of stream
+
+        await Eventually(() => device.Fault is not null);
+        Assert.IsType<EndOfStreamException>(device.Fault);
+    }
+
+    [Fact]
     public async Task DeviceInputReachesTheHostAsACoreEvent()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();

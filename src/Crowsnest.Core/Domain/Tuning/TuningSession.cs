@@ -50,6 +50,9 @@ public sealed class TuningSession
 
     // True while the pending value differs from what was last written.
     private bool _dirty;
+
+    // Set by a swap: the next sim value is the truth, whatever it is.
+    private bool _acceptNextSimValue;
     private DateTimeOffset _dirtySince;
     private DateTimeOffset _lastDetentAt;
 
@@ -155,7 +158,13 @@ public sealed class TuningSession
             return new TuningOutcome(true, null, Status);
         }
 
-        if (_pending is null)
+        if (_pending is not null && _acceptNextSimValue)
+        {
+            _confirmed = value;
+            Status = value == _pending ? PendingWriteStatus.Confirmed : PendingWriteStatus.None;
+            ClearPending();
+        }
+        else if (_pending is null)
         {
             if (value != _confirmed)
             {
@@ -231,6 +240,20 @@ public sealed class TuningSession
     public TuningOutcome Flush(DateTimeOffset now) =>
         _dirty ? new TuningOutcome(false, Write(now), Status) : Unchanged();
 
+    /// <summary>
+    /// The value is about to be swapped away by a sim event. The sim may report the swapped-in
+    /// value without first confirming the write, so whatever it reports next is taken as the
+    /// truth rather than ignored as a stranger's change (found in review, 2026-09-30). Until it
+    /// reports, the dialled value stays on screen; the settle timeout still applies if it never does.
+    /// </summary>
+    public void AcceptNextSimValue()
+    {
+        if (_pending is not null)
+        {
+            _acceptNextSimValue = true;
+        }
+    }
+
     private int Write(DateTimeOffset now)
     {
         int value = _pending!.Value;
@@ -245,6 +268,7 @@ public sealed class TuningSession
         _pending = null;
         _written = null;
         _dirty = false;
+        _acceptNextSimValue = false;
     }
 
     private TuningOutcome Unchanged() => new(false, null, Status);

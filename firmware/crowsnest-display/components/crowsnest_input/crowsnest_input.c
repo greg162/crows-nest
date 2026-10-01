@@ -7,8 +7,9 @@
 
 static const char *TAG = "input";
 
-/* The counter is read and zeroed on every poll, so the limits only need to exceed one
- * poll interval's worth of spinning. A fast flick is a few dozen counts at most. */
+/* The hardware counter wraps to 0 at these limits. With accum_count the driver adds each
+ * wrap to a running total, so the count read below never jumps; the limits only set how
+ * often that happens. */
 #define ENCODER_LIMIT_HIGH 1000
 #define ENCODER_LIMIT_LOW (-1000)
 
@@ -27,7 +28,9 @@ static const char *TAG = "input";
 #define ENCODER_CLOCKWISE_SIGN (-1)
 
 static pcnt_unit_handle_t s_unit;
-static int s_residual; /* edges left over from the last detent conversion */
+static int s_residual;   /* edges left over from the last detent conversion */
+static int s_last_count; /* the running total at the previous read */
+static bool s_last_pressed;
 static bool s_has_touch;
 
 esp_err_t crowsnest_input_init(void)
@@ -35,6 +38,7 @@ esp_err_t crowsnest_input_init(void)
     const pcnt_unit_config_t unit_config = {
         .high_limit = ENCODER_LIMIT_HIGH,
         .low_limit = ENCODER_LIMIT_LOW,
+        .flags.accum_count = true,
     };
     ESP_RETURN_ON_ERROR(pcnt_new_unit(&unit_config, &s_unit), TAG, "pcnt unit");
 
@@ -72,6 +76,10 @@ esp_err_t crowsnest_input_init(void)
         pcnt_channel_set_level_action(channel_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE),
         TAG, "channel b levels");
 
+    /* accum_count only accumulates across a wrap the driver is told about. */
+    ESP_RETURN_ON_ERROR(pcnt_unit_add_watch_point(s_unit, ENCODER_LIMIT_HIGH), TAG, "watch high");
+    ESP_RETURN_ON_ERROR(pcnt_unit_add_watch_point(s_unit, ENCODER_LIMIT_LOW), TAG, "watch low");
+
     ESP_RETURN_ON_ERROR(pcnt_unit_enable(s_unit), TAG, "pcnt enable");
     ESP_RETURN_ON_ERROR(pcnt_unit_clear_count(s_unit), TAG, "pcnt clear");
     ESP_RETURN_ON_ERROR(pcnt_unit_start(s_unit), TAG, "pcnt start");
@@ -89,15 +97,19 @@ int crowsnest_encoder_read_detents(void)
         return 0;
     }
 
+    /* Read, never clear: an edge landing between a read and a clear would be lost, and with
+     * two edges per detent one lost edge leaves every later detent registering mid-click
+     * (found in review, 2026-09-30). The difference from the last read is this poll's turn. */
     int count = 0;
     if (pcnt_unit_get_count(s_unit, &count) != ESP_OK) {
         return 0;
     }
-    pcnt_unit_clear_count(s_unit);
+    int delta = count - s_last_count;
+    s_last_count = count;
 
     /* Carry the remainder rather than truncating it, or a slow turn never reaches a
      * whole detent and the knob feels dead. */
-    int edges = (ENCODER_CLOCKWISE_SIGN * count) + s_residual;
+    int edges = (ENCODER_CLOCKWISE_SIGN * delta) + s_residual;
     int detents = edges / ENCODER_EDGES_PER_DETENT;
     s_residual = edges - (detents * ENCODER_EDGES_PER_DETENT);
     return detents;
@@ -109,9 +121,12 @@ bool crowsnest_button_is_pressed(void)
      * interrupt line for it, which is why §9.3 gives input_task a 20 ms poll. */
     uint8_t value = 0xFF;
     if (bsp_expander_read(&value) != ESP_OK) {
-        return false;
+        /* A missed read, not a released button: "false" here would turn one long press into
+         * a short press and a fresh long-press timer (found in review, 2026-09-30). */
+        return s_last_pressed;
     }
-    return (value & BSP_EXP_ENCODER_BUTTON) == 0;
+    s_last_pressed = (value & BSP_EXP_ENCODER_BUTTON) == 0;
+    return s_last_pressed;
 }
 
 bool crowsnest_touch_available(void)

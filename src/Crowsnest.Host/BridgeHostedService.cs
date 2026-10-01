@@ -58,11 +58,13 @@ public sealed partial class BridgeHostedService(
                     await coordinator.RunAsync(stoppingToken).ConfigureAwait(false);
                 }
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            catch (Exception e) when (!stoppingToken.IsCancellationRequested)
             {
                 // The run failing and the teardown of a pulled cable failing both land here.
-                // Neither may end this loop: it is the only thing that finds the panel again.
-                LogPanelLost(log, e);
+                // Neither may end this loop: it is the only thing that finds the panel again. So
+                // the filter is on shutdown, not on the exception's type: Windows can report a
+                // pulled cable as a cancelled read. The link's own fault says what really happened.
+                LogPanelLost(log, device.Fault ?? e);
             }
         }
     }
@@ -82,11 +84,17 @@ public sealed partial class BridgeHostedService(
                 await device.ConnectAsync(ct).ConfigureAwait(false);
                 return device;
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            catch (Exception e) when (!ct.IsCancellationRequested)
             {
                 // Busy ("Access is denied": another program holds the port) or not a panel.
                 LogCandidateRejected(log, candidate.PortName, e.Message);
                 await device.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // Shutting down mid-probe: still close the port.
+                await device.DisposeAsync().ConfigureAwait(false);
+                throw;
             }
         }
 

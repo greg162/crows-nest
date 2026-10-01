@@ -32,6 +32,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
     private Task? _heartbeat;
     private long _outstandingPings;
     private volatile bool _handshakeDone;
+    private Exception? _fault;
     private bool _disposed;
 
     public PanelDeviceConnection(
@@ -55,6 +56,12 @@ public sealed class PanelDeviceConnection : IPanelDevice
 
     /// <summary>Stable panel identity from the hello frame; null until the handshake completes.</summary>
     public DeviceIdentity? Identity { get; private set; }
+
+    /// <summary>
+    /// Why the link went to <see cref="DeviceConnectionState.Faulted"/>, for the log. The state
+    /// alone says only that it failed; this says "the port no longer exists" or "no pong".
+    /// </summary>
+    public Exception? Fault => Volatile.Read(ref _fault);
 
     /// <summary>Firmware log lines arriving over the link. Diagnostics only.</summary>
     public Action<DeviceLog>? LogReceived { get; set; }
@@ -202,21 +209,45 @@ public sealed class PanelDeviceConnection : IPanelDevice
 
                 // Malformed frames and unknown message types are ignored by design (spec §6.1).
             }
+
+            // The stream ended without an error: the port closed under us, or the driver read 0
+            // bytes. Without this the link would look Connected until the heartbeat gave up ~8 s
+            // later (found in review, 2026-09-30).
+            if (!ct.IsCancellationRequested)
+            {
+                Fail(new EndOfStreamException("The panel closed the link."));
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Shutting down. An abort we did not ask for (Windows can report a pulled cable
             // as a cancelled read) falls through to the fault below.
         }
-        catch (Exception) when (!ct.IsCancellationRequested)
+        catch (Exception e) when (!ct.IsCancellationRequested)
         {
-            _state.OnNext(DeviceConnectionState.Faulted);
+            Fail(e);
         }
         finally
         {
             _inputs.Writer.TryComplete();
-            _hello.TrySetCanceled(CancellationToken.None);
+
+            // A probe waiting for the hello learns the real reason, not "no hello frame".
+            if (Fault is { } fault)
+            {
+                _hello.TrySetException(fault);
+            }
+            else
+            {
+                _hello.TrySetCanceled(CancellationToken.None);
+            }
         }
+    }
+
+    /// <summary>Records the first failure and reports the link as Faulted.</summary>
+    private void Fail(Exception error)
+    {
+        Interlocked.CompareExchange(ref _fault, error, null);
+        _state.OnNext(DeviceConnectionState.Faulted);
     }
 
     private void Dispatch(DeviceMessage message)
@@ -263,7 +294,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
 
                 if (Interlocked.Increment(ref _outstandingPings) > _options.MissedPongLimit)
                 {
-                    _state.OnNext(DeviceConnectionState.Faulted);
+                    Fail(new TimeoutException($"The panel missed {_options.MissedPongLimit} pongs in a row."));
                     return;
                 }
 
@@ -272,13 +303,13 @@ public sealed class PanelDeviceConnection : IPanelDevice
                     ct);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Shutting down.
         }
-        catch (Exception) when (!ct.IsCancellationRequested)
+        catch (Exception e) when (!ct.IsCancellationRequested)
         {
-            _state.OnNext(DeviceConnectionState.Faulted);
+            Fail(e);
         }
     }
 

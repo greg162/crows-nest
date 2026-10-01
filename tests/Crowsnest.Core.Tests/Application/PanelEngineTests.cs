@@ -173,6 +173,63 @@ public class PanelEngineTests
     }
 
     [Fact]
+    public void ASwapRightAfterTuningShowsTheSwappedValueEvenIfTheWriteIsNeverConfirmed()
+    {
+        // The sim can apply the write and the swap in one frame, so the standby's only report is
+        // the old active value. It must show at once, not after the settle timeout as Rejected.
+        PanelEngine engine = Tuned();
+        engine.OnInput(Turn(1, 0), At(0)); // 121.500 -> 122.500, pending
+        engine.OnInput(Tap(), At(10));
+
+        DisplayFrame frame = engine.OnSnapshot(new ParameterSnapshot(ComStandby, 118_000)).Frame!;
+
+        Assert.Equal("118.000", frame.Fields[0].Text);
+        Assert.False(frame.Fields[0].Pending);
+        Assert.Equal(PendingWriteStatus.None, engine.Session(ComStandby).Status);
+    }
+
+    [Fact]
+    public void ASwapRightAfterTuningAlsoHandlesTheWriteConfirmingFirst()
+    {
+        PanelEngine engine = Tuned();
+        engine.OnInput(Turn(1, 0), At(0));
+        engine.OnInput(Tap(), At(10));
+
+        engine.OnSnapshot(new ParameterSnapshot(ComStandby, 122_500)); // the write, one frame early
+        DisplayFrame frame = engine.OnSnapshot(new ParameterSnapshot(ComStandby, 118_000)).Frame!;
+
+        Assert.Equal("118.000", frame.Fields[0].Text);
+        Assert.False(frame.Fields[0].Pending);
+    }
+
+    [Fact]
+    public void ASwapTheSimNeverReportsStillTimesOut()
+    {
+        PanelEngine engine = Tuned();
+        engine.OnInput(Turn(1, 0), At(0));
+        engine.OnInput(Tap(), At(10));
+
+        engine.OnTick(At(10) + TuningOptions.Default.SettleTimeout + TimeSpan.FromMilliseconds(1));
+
+        Assert.Equal(121_500, engine.Session(ComStandby).Displayed);
+        Assert.Equal(PendingWriteStatus.Rejected, engine.Session(ComStandby).Status);
+    }
+
+    [Fact]
+    public void APanelThatRejoinsHasItsInputsAcknowledgedFromOneAgain()
+    {
+        PanelEngine engine = Tuned();
+        _sequence = 40;
+        engine.OnInput(Tap(), At(0)); // seq 41
+
+        engine.OnDeviceJoined(); // the panel restarted and counts from 1
+        _sequence = 0;
+        PanelEffects tapped = engine.OnInput(Tap(), At(10));
+
+        Assert.Equal(1, tapped.Frame!.AckSequence);
+    }
+
+    [Fact]
     public void TapOnAPageWithNoSwapEventOnlyAcknowledges()
     {
         PanelPage single = new("stby", "STBY", PageLayout.SingleValue, [ComStandby]);

@@ -464,10 +464,23 @@ lv_display_t *bsp_display_start(void)
         return s_display;
     }
 
-    ESP_ERROR_CHECK(bsp_i2c_init());
-    ESP_ERROR_CHECK(backlight_init());
-    ESP_ERROR_CHECK(st7701_init());
-    ESP_ERROR_CHECK(rgb_panel_init());
+    /* Every failure returns NULL rather than aborting, as esp-bsp.h promises: app_main then
+     * brings the link up anyway, so the host can say what is wrong. An abort here was a
+     * reboot loop with the link never up (found in review, 2026-09-30). */
+    esp_err_t err = bsp_i2c_init();
+    if (err == ESP_OK) {
+        err = backlight_init();
+    }
+    if (err == ESP_OK) {
+        err = st7701_init();
+    }
+    if (err == ESP_OK) {
+        err = rgb_panel_init();
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "display bring-up failed: %s", esp_err_to_name(err));
+        return NULL;
+    }
 
     const lvgl_port_cfg_t lvgl_cfg = {
         .task_priority = 4,
@@ -481,7 +494,11 @@ lv_display_t *bsp_display_start(void)
         .timer_period_ms = 5,
         .task_max_sleep_ms = 500,
     };
-    ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
+    err = lvgl_port_init(&lvgl_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "lvgl_port_init failed: %s", esp_err_to_name(err));
+        return NULL;
+    }
 
     const lvgl_port_display_cfg_t display_cfg = {
         .panel_handle = s_panel,

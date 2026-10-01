@@ -57,10 +57,13 @@ public sealed class ManagedSimConnectClient : ISimConnectClient
             id = (uint)_events.Count + 1;
             _events[eventName] = id;
             sim.MapClientEventToSimEvent((ClientEvent)id, eventName);
-            sim.AddClientEventToNotificationGroup(Group.Crowsnest, (ClientEvent)id, false);
         }
 
-        sim.TransmitClientEvent(UserObject, (ClientEvent)id, data, Group.Crowsnest, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+        // Transmitting needs no notification group: with GROUPID_IS_PRIORITY the group argument
+        // is the priority itself. An earlier version set a priority on a group that did not exist
+        // yet, which SimConnect rejected at every connect as UNRECOGNIZED_ID (found in review,
+        // 2026-09-30), and only worked because the group's id happened to equal HIGHEST.
+        sim.TransmitClientEvent(UserObject, (ClientEvent)id, data, Priority.Highest, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
     });
 
     public async ValueTask DisposeAsync()
@@ -107,7 +110,6 @@ public sealed class ManagedSimConnectClient : ISimConnectClient
             sim.OnRecvSimobjectData += (_, data) => _messages.Writer.TryWrite(new SimConnectMessage.Value(
                 data.dwRequestID, ((SingleValue)data.dwData[0]).Value));
 
-            sim.SetNotificationGroupPriority(Group.Crowsnest, Sdk.SIMCONNECT_GROUP_PRIORITY_HIGHEST);
             opened.SetResult();
 
             while (!quit && !_stop.IsCancellationRequested)
@@ -156,9 +158,11 @@ public sealed class ManagedSimConnectClient : ISimConnectClient
 
     private enum ClientEvent : uint;
 
-    private enum Group : uint
+    // SIMCONNECT_GROUP_PRIORITY_HIGHEST in SimConnect.h. The wrapper's copy is a field, not a
+    // constant, so it cannot initialise an enum member.
+    private enum Priority : uint
     {
-        Crowsnest = 1,
+        Highest = 1,
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]

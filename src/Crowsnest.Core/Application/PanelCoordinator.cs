@@ -95,7 +95,7 @@ public sealed class PanelCoordinator
                     InputReceived input => _engine.OnInput(input.Input, now),
                     SnapshotReceived snapshot => _engine.OnSnapshot(snapshot.Snapshot),
                     SimStateChanged state => _engine.OnSimConnection(state.State),
-                    DeviceStateChanged { State: DeviceConnectionState.Connected } => new PanelEffects([], _engine.Render()),
+                    DeviceStateChanged { State: DeviceConnectionState.Connected } => _engine.OnDeviceJoined(),
                     Tick => _engine.OnTick(now),
                     _ => PanelEffects.None,
                 };
