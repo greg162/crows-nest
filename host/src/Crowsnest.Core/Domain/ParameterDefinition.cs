@@ -46,7 +46,7 @@ public sealed record ParameterDefinition
 
     public ParameterId Id { get; }
 
-    /// <summary>What the panel shows above the value: <c>"COM 1 STBY"</c>.</summary>
+    /// <summary>What the device shows above the value: <c>"COM 1 STBY"</c>.</summary>
     public string Label { get; }
 
     /// <summary>Binds an active/standby pair together: <c>"com1"</c>.</summary>

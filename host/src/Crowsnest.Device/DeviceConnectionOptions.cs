@@ -1,7 +1,7 @@
 namespace Crowsnest.Device;
 
 /// <summary>Timings for the link (spec §6.1). Defaults are the values the spec names.</summary>
-public sealed record PanelConnectionOptions
+public sealed record DeviceConnectionOptions
 {
     /// <summary>Announced to the device in the host hello.</summary>
     public string HostName { get; init; } = "Crowsnest 0.1.0";

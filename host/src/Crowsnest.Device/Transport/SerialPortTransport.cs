@@ -33,7 +33,7 @@ public sealed class SerialPortTransport(string portName, int baudRate = 921_600)
             // NEVER assert these on this board. The ESP32-S3's USB-Serial/JTAG peripheral
             // maps the CDC control lines onto the reset circuit — RTS drives EN and DTR
             // drives GPIO 0, which is exactly how esptool reboots the chip into download
-            // mode. Setting RtsEnable holds the panel in reset, and the symptom is a board
+            // mode. Setting RtsEnable holds the device in reset, and the symptom is a board
             // that enumerates perfectly and never says a word.
             DtrEnable = false,
             RtsEnable = false,

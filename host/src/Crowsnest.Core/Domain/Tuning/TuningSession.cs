@@ -16,12 +16,12 @@ public enum PendingWriteStatus
 }
 
 /// <summary>What one call changed, for the caller to act on.</summary>
-/// <param name="DisplayChanged">The panel needs redrawing: the value, the cursor, or both.</param>
+/// <param name="DisplayChanged">The devices showing it need redrawing: the value, the cursor, or both.</param>
 /// <param name="WriteRequest">A value to send to the sim now, or null.</param>
 public readonly record struct TuningOutcome(bool DisplayChanged, int? WriteRequest, PendingWriteStatus Status);
 
 /// <summary>
-/// One parameter being tuned: the value on the panel, the value the sim last agreed to, and the
+/// One parameter being tuned: the value on screen, the value the sim last agreed to, and the
 /// writes that reconcile the two (spec §5.4).
 ///
 /// Pure: no clock, no I/O, not thread-safe. Time comes in as <c>now</c>, and the caller sends

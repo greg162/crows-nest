@@ -1,6 +1,6 @@
 using Crowsnest.DeviceSimulator;
 
-// Phase 1's demo (spec §13): the whole host against a fake sim and a simulated panel.
+// Phase 1's demo (spec §13): the whole host against a fake sim and a simulated device.
 //
 //   dotnet run --project tools/Crowsnest.DeviceSimulator              interactive, fake sim
 //   dotnet run --project tools/Crowsnest.DeviceSimulator -- --msfs    interactive, MSFS over SimConnect

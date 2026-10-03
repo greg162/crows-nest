@@ -7,7 +7,7 @@ using Crowsnest.Core.Panels;
 
 namespace Crowsnest.Core.Tests.Application;
 
-/// <summary>Scenario tests for the panel's behaviour, with every timestamp explicit (spec §11).</summary>
+/// <summary>Scenario tests for the panels' behaviour, with every timestamp explicit (spec §11).</summary>
 public class PanelEngineTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 27, 12, 0, 0, TimeSpan.Zero);
@@ -19,9 +19,9 @@ public class PanelEngineTests
 
     private static readonly PanelPage NavPage = new("nav1", "NAV 1", PageLayout.ActiveStandbyPair, [NavStandby, NavActive], "NAV1_RADIO_SWAP");
 
-    /// <summary>The panel these tests drive; the multi-panel tests add <see cref="Q"/>.</summary>
-    private const string P = "panel-a";
-    private const string Q = "panel-b";
+    /// <summary>The device these tests drive; the multi-device tests add <see cref="Q"/>.</summary>
+    private const string P = "device-a";
+    private const string Q = "device-b";
 
     private long _sequence;
 
@@ -222,13 +222,13 @@ public class PanelEngineTests
     }
 
     [Fact]
-    public void APanelThatRejoinsHasItsInputsAcknowledgedFromOneAgain()
+    public void ADeviceThatRejoinsHasItsInputsAcknowledgedFromOneAgain()
     {
         PanelEngine engine = Tuned();
         _sequence = 40;
         engine.OnInput(P, Tap(), At(0)); // seq 41
 
-        engine.OnPanelRestarted(P); // the panel restarted and counts from 1
+        engine.OnDeviceRestarted(P); // the device restarted and counts from 1
         _sequence = 0;
         PanelEffects tapped = engine.OnInput(P, Tap(), At(10));
 
@@ -354,14 +354,14 @@ public class PanelEngineTests
     }
 
     [Fact]
-    public void ATurnOnOnePanelShowsOnEveryPanelShowingTheValue()
+    public void ATurnOnOneDeviceShowsOnEveryDeviceShowingTheValue()
     {
         PanelEngine engine = Tuned();
         engine.Join(Q);
 
         PanelEffects turned = engine.OnInput(P, Turn(1, 0), At(0));
 
-        Assert.Equal([P, Q], turned.Frames.Select(f => f.PanelId).Order());
+        Assert.Equal([P, Q], turned.Frames.Select(f => f.DeviceId).Order());
         DisplayFrame other = turned.FrameFor(Q)!;
         Assert.Equal("122.500", other.Fields[0].Text);
         Assert.True(other.Fields[0].Pending);
@@ -370,7 +370,7 @@ public class PanelEngineTests
     }
 
     [Fact]
-    public void PanelsShareOneSessionSoTheirTurnsAddUp()
+    public void DevicesShareOneSessionSoTheirTurnsAddUp()
     {
         PanelEngine engine = Tuned();
         engine.Join(Q);
@@ -383,54 +383,54 @@ public class PanelEngineTests
     }
 
     [Fact]
-    public void PanelsNavigateIndependently()
+    public void DevicesNavigateIndependently()
     {
         PanelEngine engine = Tuned();
         engine.Join(Q);
 
         PanelEffects paged = engine.OnInput(P, Swipe(SwipeDir.Left), At(0));
 
-        Assert.Equal([P], paged.Frames.Select(f => f.PanelId));
+        Assert.Equal([P], paged.Frames.Select(f => f.DeviceId));
         Assert.Equal("nav1", engine.CurrentPage(P).Id);
         Assert.Equal("com1", engine.CurrentPage(Q).Id);
 
-        // A NAV value redraws only the panel showing NAV, a COM value only the one showing COM.
-        Assert.Equal([P], engine.OnSnapshot(new ParameterSnapshot(NavStandby, 110_350)).Frames.Select(f => f.PanelId));
-        Assert.Equal([Q], engine.OnSnapshot(new ParameterSnapshot(ComActive, 124_850)).Frames.Select(f => f.PanelId));
+        // A NAV value redraws only the device showing NAV, a COM value only the one showing COM.
+        Assert.Equal([P], engine.OnSnapshot(new ParameterSnapshot(NavStandby, 110_350)).Frames.Select(f => f.DeviceId));
+        Assert.Equal([Q], engine.OnSnapshot(new ParameterSnapshot(ComActive, 124_850)).Frames.Select(f => f.DeviceId));
     }
 
     [Fact]
-    public void AnAcknowledgementRedrawsOnlyThePanelThatSentTheInput()
+    public void AnAcknowledgementRedrawsOnlyTheDeviceThatSentTheInput()
     {
         PanelEngine engine = Tuned();
         engine.Join(Q);
 
-        Assert.Equal([Q], engine.OnInput(Q, Swipe(SwipeDir.Up), At(0)).Frames.Select(f => f.PanelId));
+        Assert.Equal([Q], engine.OnInput(Q, Swipe(SwipeDir.Up), At(0)).Frames.Select(f => f.DeviceId));
     }
 
     [Fact]
-    public void ASimConnectionChangeRedrawsEveryPanel()
+    public void ASimConnectionChangeRedrawsEveryDevice()
     {
         PanelEngine engine = NewEngine();
         engine.Join(Q);
 
-        Assert.Equal([P, Q], engine.OnSimConnection(SimConnectionState.Connected).Frames.Select(f => f.PanelId).Order());
+        Assert.Equal([P, Q], engine.OnSimConnection(SimConnectionState.Connected).Frames.Select(f => f.DeviceId).Order());
     }
 
     [Fact]
-    public void APanelThatLeftGetsNoFramesAndItsLateInputIsIgnored()
+    public void ADeviceThatLeftGetsNoFramesAndItsLateInputIsIgnored()
     {
         PanelEngine engine = Tuned();
         engine.Join(Q);
         engine.Leave(Q);
 
         Assert.Same(PanelEffects.None, engine.OnInput(Q, Turn(1, 0), At(0)));
-        Assert.Equal([P], engine.OnSnapshot(new ParameterSnapshot(ComActive, 124_850)).Frames.Select(f => f.PanelId));
+        Assert.Equal([P], engine.OnSnapshot(new ParameterSnapshot(ComActive, 124_850)).Frames.Select(f => f.DeviceId));
         Assert.Equal(121_500, engine.Session(ComStandby).Displayed);
     }
 
     [Fact]
-    public void APanelThatRejoinsStartsOnTheFirstPage()
+    public void ADeviceThatRejoinsStartsOnTheFirstPage()
     {
         PanelEngine engine = Tuned();
         engine.OnInput(P, Swipe(SwipeDir.Left), At(0));

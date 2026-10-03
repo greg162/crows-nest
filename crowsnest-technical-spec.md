@@ -21,7 +21,7 @@ The system is designed from the outset as a **general sim panel bridge that ship
 - Active/standby swap
 - Windows installer producing an Add/Remove Programs entry
 - System tray application with settings and diagnostics
-- USB serial transport over a powered hub, **multiple panels supported from v1**
+- USB serial transport over a powered hub, **multiple devices supported from v1**
 - Firmware updates pushed over the same link
 - Custom firmware for the CrowPanel
 
@@ -34,12 +34,12 @@ The system is designed from the outset as a **general sim panel bridge that ship
 | 6 | Autopilot: altitude, heading, vertical speed, airspeed | one `Panels/Autopilot/` module |
 | 6 | Transponder, OBS, barometer | one module each; transponder needs a custom `IPanelBehaviour` |
 | 7 | Additional rotary boards (M5Dial, Viewe, Waveshare) | 1 BSP + 1 input shim + 1 sdkconfig per board |
-| 7 | Wi-Fi transport, for panels mounted away from the PC | 1 `IDeviceTransport` implementation |
+| 7 | Wi-Fi transport, for devices mounted away from the PC | 1 `IDeviceTransport` implementation |
 
 **Out of scope indefinitely**
 
 - Bluetooth transport — explicitly rejected, see D2
-- Non-rotary hardware (button boxes, multi-encoder panels)
+- Non-rotary hardware (button boxes, multi-encoder devices)
 - Aircraft-specific L-var support for study-level add-ons — the registry has a slot for it (§5.3) but the WASM plumbing is a separate project
 - Anything requiring a SimConnect connection over a network
 
@@ -86,7 +86,7 @@ Three tiers with a strict dependency direction. The PC owns all state and all lo
 └───────────────────────┬──────────────────────────────────────────┘
                         │ powered USB hub · NDJSON · formatted text
 ┌───────────────────────▼──────────────────────────────────────────┐
-│  1..N rotary panels  (ESP32-S3), addressed by eFuse MAC          │
+│  1..N rotary devices (ESP32-S3), addressed by eFuse MAC          │
 │    crowsnest_ui    LVGL 9 — board-independent                    │
 │    crowsnest_link  framing + capability handshake                │
 │    crowsnest_input encoder/button shim        ← per-board        │
@@ -98,30 +98,47 @@ Three tiers with a strict dependency direction. The PC owns all state and all lo
 
 **D1 — The firmware is a thin client.** It holds no radio logic, no channel tables, no notion of MHz versus kHz. It receives a state frame and draws it; it sends input events and forgets them. Every behavioural change then happens in C#, where it is testable and does not require reflashing. The cost is a round trip on every detent; over USB CDC that is a few milliseconds, and the host echoes a new state frame immediately on receipt without waiting for the sim, so the knob feels direct.
 
-**D2 — Powered USB hub, wired. Wi-Fi as an option, Bluetooth never.** This is settled by power, not by data. Each panel draws 5 V at up to 1 A and has no battery, so **a cable runs to every panel regardless of transport**. Bluetooth and Wi-Fi do not remove that cable; they add a radio next to it. Once a cable is mandatory, using it for data is nearly free.
+**D2 — Powered USB hub, wired. Wi-Fi as an option, Bluetooth never.** This is settled by power, not by data. Each device draws 5 V at up to 1 A and has no battery, so **a cable runs to every device regardless of transport**. Bluetooth and Wi-Fi do not remove that cable; they add a radio next to it. Once a cable is mandatory, using it for data is nearly free.
 
 | | USB (powered hub) | Wi-Fi | Bluetooth |
 |---|---|---|---|
 | Removes the cable | No — cable is mandatory anyway | No | No |
 | Per-detent latency | ~1–3 ms | 5–20 ms, jittery under load | 30–100 ms+ |
-| Setup per panel | Plug in | SSID, password, discovery, firewall | Pair, re-pair after each flash |
+| Setup per device | Plug in | SSID, password, discovery, firewall | Pair, re-pair after each flash |
 | Identity across reboots | Protocol handshake | Protocol handshake | Protocol handshake |
-| Panel-side cost | None | RGB panel tearing from PSRAM contention | Same radio, same band |
-| Scales to 5 panels | Yes | Yes, but 5× the provisioning | Poorly |
+| Device-side cost | None | RGB panel tearing from PSRAM contention | Same radio, same band |
+| Scales to 5 devices | Yes | Yes, but 5× the provisioning | Poorly |
 
 Three specifics behind that table:
 
 - **The ESP32-S3 has no Bluetooth Classic.** It is BLE-only — Elecrow's own specification lists "Bluetooth Low Energy and Bluetooth 5.0" with no BR/EDR. That rules out the Serial Port Profile, so a Bluetooth build means a custom GATT service. Worse, Windows negotiates conservative BLE connection intervals, which puts per-detent latency in the tens of milliseconds. On a knob that is felt directly as lag, and it is the one place in this system where latency is not negotiable.
 - **Wi-Fi does not actually reduce the mess.** BLE and 2.4 GHz Wi-Fi share a band, so the interference concern applies to both. The real Wi-Fi problem here is the one already in the spec: on ESP32-S3, an RGB-parallel panel streaming its framebuffer from PSRAM contends with the radio for memory bandwidth, and tearing under Wi-Fi load is a known class of problem on these boards.
-- **Wi-Fi still earns a place, but later.** In a permanent cockpit build, panel power is often already solved by a distribution rail, so a Wi-Fi panel needs no data run to the PC. That is a real advantage for a mounted frame and the reason `IDeviceTransport` stays an abstraction — but it is a phase 7 convenience, not the primary path.
+- **Wi-Fi still earns a place, but later.** In a permanent cockpit build, device power is often already solved by a distribution rail, so a Wi-Fi device needs no data run to the PC. That is a real advantage for a mounted frame and the reason `IDeviceTransport` stays an abstraction — but it is a phase 7 convenience, not the primary path.
 
-**Hub sizing is a real constraint, not a footnote.** Five panels at the rated 1 A is 5 A / 25 W. A bus-powered USB 2.0 hub supplies 500 mA per port and USB 3.0 supplies 900 mA; neither is close. Many hubs sold as "powered" ship a 2 A adapter shared across all ports. Specify a hub with a **40 W or better supply and per-port current of at least 1 A**, and treat brown-out under simultaneous full backlight as a thing to test rather than assume.
+**Hub sizing is a real constraint, not a footnote.** Five devices at the rated 1 A is 5 A / 25 W. A bus-powered USB 2.0 hub supplies 500 mA per port and USB 3.0 supplies 900 mA; neither is close. Many hubs sold as "powered" ship a 2 A adapter shared across all ports. Specify a hub with a **40 W or better supply and per-port current of at least 1 A**, and treat brown-out under simultaneous full backlight as a thing to test rather than assume.
 
 **D3 — Build our own SimConnect layer, behind an interface.** See §7. The instinct is right, but the interface matters more than the implementation.
 
 **D4 — Use LVGL on the device.** See §9. Writing our own rendering is not a good use of the budget.
 
 **D5 — WiX v5 MSI, not MSIX.** MSI gives the Add/Remove Programs entry directly, and imposes no constraints on native DLL loading, serial port access, or startup registration.
+
+---
+
+## Terms
+
+These words have one meaning each, in this spec, the code and conversation:
+
+| Term | Means | Example |
+|---|---|---|
+| **Device** | One physical board on USB, identified by its hardware id (eFuse MAC). Never a COM port | the CrowPanel `a4cb8fdcdc74` |
+| **Panel** | A family of cockpit controls; one module in code (§5.8) | COM, NAV, Transponder, Autopilot |
+| **Page** | One screen of a panel | COM1, COM2, NAV1 |
+| **Field** | One value shown on a page | COM 1 standby |
+| **Parameter** | One sim value behind a field (§5.2) | `com1.standby` |
+| **Assignment** | Which pages a device shows (§6.2) | "Radios": com1, com2, nav1 |
+
+"CrowPanel" is Elecrow's product name; the board itself is always a device. In the firmware and board sections (§9), "panel" also keeps ESP-IDF's meaning of the LCD itself (`esp_lcd_panel`, "RGB panel", "panel init sequence").
 
 ---
 
@@ -171,7 +188,7 @@ host/src/Crowsnest.Core/
 │   └── Tuning/                    TuningSession, TuningOptions, acceleration
 │
 ├── Application/                   — shared orchestration
-│   ├── Ports/                     ISimParameterGateway, IPanelDevice
+│   ├── Ports/                     ISimParameterGateway, IDevice
 │   ├── Panels/                    IPanelModule, PanelBuilder, PanelComposer
 │   ├── PanelCoordinator.cs
 │   ├── PageNavigator.cs
@@ -199,7 +216,7 @@ Tests mirror it exactly — `host/tests/Crowsnest.Core.Tests/Panels/Com/` — so
 
 ### 5.0 The generalisation: everything is a tunable parameter
 
-COM 1 is the first of perhaps fifteen things this panel will eventually control. NAV 1/2, COM 2, ADF, transponder, and the autopilot's altitude, heading, vertical speed and airspeed all share one shape:
+COM 1 is the first of perhaps fifteen things Crowsnest will eventually control. NAV 1/2, COM 2, ADF, transponder, and the autopilot's altitude, heading, vertical speed and airspeed all share one shape:
 
 > a value that lives in the sim, a set of legal values it may take, a cursor selecting which digit group the knob moves, a way to read it, and a way to write it.
 
@@ -384,7 +401,7 @@ The 8.33 kHz rule it encodes is unchanged and remains the subtlest thing in the 
 
 The §11 property tests are written as exhaustive loops over every grid value rather than with FsCheck; the grids are small enough that this covers every case.
 
-**Why the grid is ours rather than the sim's.** SimConnect offers relative events (`COM_RADIO_FRACT_INC` and friends) that would let the sim apply its own spacing. Rejected: every detent would wait on a sim frame before the panel could show it, which is fine on the reference machine and not on a laptop at 25 fps; relative writes are not idempotent, so a dropped or retried event drifts where an absolute write self-corrects; and the pending/confirmed model in §5.4 assumes absolute values. The panel steps locally from this grid and the sim confirms.
+**Why the grid is ours rather than the sim's.** SimConnect offers relative events (`COM_RADIO_FRACT_INC` and friends) that would let the sim apply its own spacing. Rejected: every detent would wait on a sim frame before the device could show it, which is fine on the reference machine and not on a laptop at 25 fps; relative writes are not idempotent, so a dropped or retried event drifts where an absolute write self-corrects; and the pending/confirmed model in §5.4 assumes absolute values. The panel steps locally from this grid and the sim confirms.
 
 **Choosing the spacing.** Follow the `COM SPACING MODE:n` SimVar (`Enum`: 0 = 25 kHz, 1 = 8.33), subscribed like any other value so a mid-flight toggle is followed, and rebuild the grid on every change. **The SimVar is the only evidence.** The sim does not police spacing (below), so a frequency it reports may be one we wrote, and says nothing about what the aircraft supports. **The host must therefore never write a channel that is illegal in the current mode** — the grid is the only guard there is. On a change to 25 kHz, expect the sim to snap standby itself; `ObserveSimValue` picks that up like any other external change. Log the mode in tray diagnostics.
 
@@ -525,7 +542,7 @@ public interface ISimParameterGateway : IAsyncDisposable
 
 public sealed record ParameterSnapshot(ParameterId Id, int CanonicalValue, bool Available);
 
-public interface IPanelDevice : IAsyncDisposable
+public interface IDevice : IAsyncDisposable
 {
     IObservable<DeviceConnectionState> ConnectionState { get; }
     DeviceCapabilities? Capabilities { get; }          // populated by the hello handshake
@@ -576,7 +593,7 @@ This is the pivotal decision for extensibility. The firmware receives `"12,000"`
 public sealed class PanelCoordinator : IAsyncDisposable
 {
     public PanelCoordinator(
-        ISimParameterGateway sim, IPanelDevice device,
+        ISimParameterGateway sim, IDevice device,
         ParameterRegistry registry, IPageCatalog pages, IInputActionMap actions,
         IOptionsMonitor<BridgeOptions> options, TimeProvider time,
         ILogger<PanelCoordinator> log);
@@ -612,7 +629,7 @@ Gesture bindings become configuration. The v1 map: turn → `AdjustValue`, short
 - **Every session is ticked**, not only the current page's: tuning COM and swiping away inside the debounce must not strand the write. With a handful of parameters this costs nothing.
 - **Swap flushes first.** A tap with a dialled value not yet written sends the write, then the swap event, so the sim swaps what the pilot sees (`TuningSession.Flush`). The swap's result arrives as two ordinary snapshots.
 - **Frames.** The knob always tunes the page's first field, and only that field carries a cursor, resolved through `CursorSpans` and omitted while the value is a placeholder. `Pending` follows `AwaitingConfirmation`, and a change to it redraws even when the text is unchanged (confirmation, a rejection back to the same value). Every new input sequence is acknowledged with a frame, even an ignored gesture; a replayed sequence is not. A device returning to `Connected` gets a full frame.
-- **Acceleration timing** uses the time between input events as stamped on them, which today is the host's receive time (`PanelDeviceConnection` stamps each frame as it arrives); session timers use the host clock. A device-side timestamp would remove USB jitter, but has not been needed.
+- **Acceleration timing** uses the time between input events as stamped on them, which today is the host's receive time (`DeviceConnection` stamps each frame as it arrives); session timers use the host clock. A device-side timestamp would remove USB jitter, but has not been needed.
 - **COM spacing, implemented 2026-09-27.** `com.parameters.json` has a watch entry (`"kind": "watch"`, id and read binding only) for `COM SPACING MODE:1`. `ISimParameterGateway.SubscribeAsync` takes `ParameterRegistry.Subscriptions` — every parameter plus every watch, as `SimSubscription(Id, Read)` — replacing `AllReadBindings`. A minimal `IPanelBehaviour` (`OnSnapshot` only; `OnCommand` waits for the transponder) sees every snapshot before the sessions do, through an `IPanelContext` that can `ReplaceGrid`. `ComSpacingBehaviour` is both the `comChannel` grid factory and the behaviour: the factory notes which parameters name which watch in `spacingFrom`, `Validate` fails startup if the watch does not exist, and a mode snapshot (0 = 25 kHz, 1 = 8.33, anything else ignored) rebuilds those grids. `TuningSession.ReplaceGrid` drops a value still being dialled rather than snapping it; the sim snaps its own values and reports them as ordinary changes. `DefaultParameters.Load()` now returns a `PanelSetup` (registry, pages, behaviours).
 - **Not yet:** capability-driven layout selection, multiple devices (§6.2), and notices (e.g. surfacing a rejection).
 
@@ -739,7 +756,7 @@ public sealed class ProtocolCodec;
 [JsonSerializable(typeof(DeviceMessage))]
 public partial class ProtocolJsonContext : JsonSerializerContext;   // source-generated
 
-public sealed class PanelDeviceConnection : IPanelDevice;   // transport + codec + heartbeat
+public sealed class DeviceConnection : IDevice;   // transport + codec + heartbeat
 public sealed class CapabilityNegotiator;                   // hello → DeviceCapabilities
 public sealed class DeviceDiscovery : IDeviceDiscovery;
 public sealed class HeartbeatMonitor;
@@ -801,22 +818,22 @@ Protocol rules:
 - `ts` is an **opaque 64-bit correlation token, not a time**. The host chooses the value, the device echoes it back unchanged in the `pong`, and the device never interprets, rescales or narrows it. The host matches a pong to its outstanding ping by that value alone, so a device that echoes anything else matches nothing. This is the contract a 32-bit `ts` in the panel firmware broke during first bring-up: the host keys its in-flight pings on `Stopwatch.GetTimestamp()`, which passes `INT32_MAX` a few minutes after boot, so every pong came back saturated at `2147483647` and the handshake completed but the first measurement never returned. Both ends carry this as a 64-bit integer. Every host-side wait on a pong is also bounded, so a device that gets this wrong surfaces as a named timeout rather than a silent hang on a link that still looks alive.
 - Unknown message types and unknown fields are ignored rather than treated as errors, so the two sides version independently.
 
-### 6.2 Multiple panels
+### 6.2 Multiple devices
 
-Five panels on a hub is a bigger architectural change than the transport choice. It is also the change that makes the panel module system from §5.8 pay off a third time: **a physical panel is an assignment of pages to a device**.
+Five devices on a hub is a bigger architectural change than the transport choice. It is also the change that makes the panel module system from §5.8 pay off a third time: **what a device shows is an assignment of pages to it**.
 
 ```csharp
-public interface IPanelDeviceManager : IAsyncDisposable
+public interface IDeviceManager : IAsyncDisposable
 {
     IObservable<RosterChanged> Roster { get; }
-    IReadOnlyList<ConnectedPanel> Connected { get; }
+    IReadOnlyList<ConnectedDevice> Connected { get; }
     Task StartAsync(CancellationToken ct);       // continuous scan + reconnect
 }
 
-public sealed record ConnectedPanel(
+public sealed record ConnectedDevice(
     DeviceIdentity Identity,
     DeviceCapabilities Capabilities,
-    IPanelDevice Device,
+    IDevice Device,
     PanelAssignment? Assignment);
 
 public sealed record DeviceIdentity(
@@ -832,34 +849,34 @@ public sealed record PanelAssignment(string Name, IReadOnlyList<string> PageIds)
 Assignments persist in settings keyed by hardware ID:
 
 ```jsonc
-"panels": {
+"devices": {
   "a4cf12de9010": { "name": "Radios",    "pages": ["com1", "com2", "nav1", "nav2"] },
   "a4cf12de9f44": { "name": "Autopilot", "pages": ["ap.alt", "ap.hdg", "ap.vs"] },
   "a4cf12de7721": { "name": "Transponder", "pages": ["xpdr"] }
 }
 ```
 
-An unassigned panel renders an "unassigned" screen showing the last six characters of its hardware ID, and the tray raises a notification. The user matches the ID on screen to an entry in settings — which is how you tell five identical black discs apart without unplugging them one at a time.
+An unassigned device renders an "unassigned" screen showing the last six characters of its hardware ID, and the tray raises a notification. The user matches the ID on screen to an entry in settings — which is how you tell five identical black discs apart without unplugging them one at a time.
 
-**Coordinator shape: one loop, many devices.** Do not instantiate a `PanelCoordinator` per device. Two panels showing COM 1 must share one `TuningSession`, or they will fight each other's pending writes. Instead the existing coordinator grows a device dimension:
+**Coordinator shape: one loop, many devices.** Do not instantiate a `PanelCoordinator` per device. Two devices showing COM 1 must share one `TuningSession`, or they will fight each other's pending writes. Instead the existing coordinator grows a device dimension:
 
 ```csharp
 internal sealed record DeviceInputReceived(string HardwareId, DeviceInputEvent Input) : BridgeEvent;
-internal sealed record DeviceJoined(ConnectedPanel Panel)  : BridgeEvent;
+internal sealed record DeviceJoined(ConnectedDevice Device)  : BridgeEvent;
 internal sealed record DeviceLeft(string HardwareId)       : BridgeEvent;
 ```
 
-All inputs from all panels land in the same `Channel<BridgeEvent>` and are processed on one thread. Sessions live in a shared store keyed by `ParameterId`, so state is naturally consistent across panels. Renders fan out: each device receives a `DisplayFrame` built only from the pages assigned to it. The no-locks property of §5.7 survives intact, and it is the main reason not to shard the coordinator.
+All inputs from all devices land in the same `Channel<BridgeEvent>` and are processed on one thread. Sessions live in a shared store keyed by `ParameterId`, so state is naturally consistent across devices. Renders fan out: each device receives a `DisplayFrame` built only from the pages assigned to it. The no-locks property of §5.7 survives intact, and it is the main reason not to shard the coordinator.
 
-Each device keeps its own `PageNavigator` — panels navigate independently even though they share tuning state.
+Each device keeps its own `PageNavigator` — devices navigate independently even though they share tuning state.
 
-**Sim subscription is unaffected.** One gateway, one data definition covering every registered parameter, regardless of how many panels are plugged in.
+**Sim subscription is unaffected.** One gateway, one data definition covering every registered parameter, regardless of how many devices are plugged in.
 
-**First cut implemented and verified 2026-10-03** (two CrowPanels, fw 0.3.4, COM4 + COM5). `PanelEngine` keeps the shared `TuningSession`s and a per-panel view (page navigator, revision, ack, last-turn time), keyed by hardware id; after each event it renders a frame only for the panels whose screen changed. `PanelCoordinator.RunAsync` runs for the life of the bridge, and each connected panel is served by `RunPanelAsync(hardwareId, device, ct)`, which ends (throwing) only for that panel when its link faults; a second panel claiming a hardware id already connected is refused. `BridgeHostedService` scans every 2 s, skipping the ports it already holds, and reports a refused port once rather than every scan. A `hello` carrying a different hardware id on an open link faults it instead of rejoining. Verified on hardware: turning one panel's knob updates the other at once, the panels page independently, and a pulled cable drops only that panel, which rejoins when plugged back in. Not yet: assignments (every panel gets every page), the "unassigned" screen, per-panel `hello_ack` settings, and `IPanelDeviceManager` as a type of its own (the scan lives in `BridgeHostedService`).
+**First cut implemented and verified 2026-10-03** (two CrowPanels, fw 0.3.4, COM4 + COM5). `PanelEngine` keeps the shared `TuningSession`s and a per-device view (page navigator, revision, ack, last-turn time), keyed by hardware id; after each event it renders a frame only for the panels whose screen changed. `PanelCoordinator.RunAsync` runs for the life of the bridge, and each connected panel is served by `RunDeviceAsync(hardwareId, device, ct)`, which ends (throwing) only for that panel when its link faults; a second panel claiming a hardware id already connected is refused. `BridgeHostedService` scans every 2 s, skipping the ports it already holds, and reports a refused port once rather than every scan. A `hello` carrying a different hardware id on an open link faults it instead of rejoining. Verified on hardware: turning one panel's knob updates the other at once, the panels page independently, and a pulled cable drops only that panel, which rejoins when plugged back in. Not yet: assignments (every panel gets every page), the "unassigned" screen, per-panel `hello_ack` settings, and `IDeviceManager` as a type of its own (the scan lives in `BridgeHostedService`).
 
 ### 6.3 Firmware updates over the link
 
-Detecting panels and offering to update them is the right call, and it is worth more here than with one device — nobody wants to flash five boards by hand. But do it **over the existing protocol**, not by shelling out to `esptool`.
+Detecting devices and offering to update them is the right call, and it is worth more here than with one device — nobody wants to flash five boards by hand. But do it **over the existing protocol**, not by shelling out to `esptool`.
 
 ```json
 {"v":2,"t":"ota_begin","size":1843200,"sha256":"9f2c...","version":"1.1.0"}
@@ -873,13 +890,13 @@ The firmware writes into the inactive OTA partition, verifies the hash, marks it
 Why this rather than driving `esptool`:
 
 - **No bootloader gymnastics.** Entering download mode via a USB-UART bridge depends on the DTR/RTS auto-reset circuit behaving, which is board-specific and a common source of "works on my desk" bugs. OTA sidesteps it entirely.
-- **Transport-agnostic.** The same code path updates a panel over USB today and over Wi-Fi in phase 7. An esptool-based flow only ever works over serial.
+- **Transport-agnostic.** The same code path updates a device over USB today and over Wi-Fi in phase 7. An esptool-based flow only ever works over serial.
 - **No GPL entanglement.** esptool is GPL-2.0, which is a live question if Crowsnest ships as a signed closed-source installer. Worth resolving before it becomes a dependency rather than after.
-- **Better failure mode.** A half-written OTA partition boots the old firmware. A half-written flash via esptool bricks the panel until someone finds the BOOT button.
+- **Better failure mode.** A half-written OTA partition boots the old firmware. A half-written flash via esptool bricks the device until someone finds the BOOT button.
 
 Keep an esptool path documented for initial provisioning of a blank board, where there is no Crowsnest firmware to talk to. That is a one-time, per-board operation and a reasonable place to require a manual step.
 
-Update flow in the tray: on connect, compare `DeviceCapabilities.FirmwareVersion` against the version bundled with the installed app; if it is older, offer a single "Update all panels" action that walks the roster sequentially. Never update in parallel — a brown-out during a simultaneous five-panel flash is exactly the failure the hub sizing note is warning about.
+Update flow in the tray: on connect, compare `DeviceCapabilities.FirmwareVersion` against the version bundled with the installed app; if it is older, offer a single "Update all devices" action that walks the roster sequentially. Never update in parallel — a brown-out during a simultaneous five-panel flash is exactly the failure the hub sizing note is warning about.
 
 ## 7. Crowsnest.SimConnect — the SimConnect library
 
@@ -1059,7 +1076,7 @@ The tray icon carries the whole status story: grey when nothing is connected, am
 
 ### 9.0 Two questions, two layers
 
-"Is there a library for displaying data on these panels?" is really two questions, and conflating them is the usual reason these projects end up unportable.
+"Is there a library for displaying data on these devices?" is really two questions, and conflating them is the usual reason these projects end up unportable.
 
 | Layer | Question | Answer |
 |---|---|---|
@@ -1178,7 +1195,7 @@ The RGB-parallel panel with its framebuffer in PSRAM is the configuration where 
 
 ### 9.6 Toolchain findings from the first build
 
-Validated on the reference machine against **ESP-IDF v6.1** (EIM, `C:\esp\v6.1\esp-idf`) by configuring and building the stock `hello_world` example for `esp32s3`, probing the panel with `esptool chip-id`, and adding `lvgl/lvgl` as a managed dependency. Five findings change decisions elsewhere in this document.
+Validated on the reference machine against **ESP-IDF v6.1** (EIM, `C:\esp\v6.1\esp-idf`) by configuring and building the stock `hello_world` example for `esp32s3`, probing the device with `esptool chip-id`, and adding `lvgl/lvgl` as a managed dependency. Five findings change decisions elsewhere in this document.
 
 **The stock `sdkconfig` is wrong for this board in four places.** A freshly generated `sdkconfig` is 2,325 lines, essentially all defaults. `sdkconfig.defaults.crowpanel_21` carries only the deltas:
 
@@ -1199,7 +1216,7 @@ Validated on the reference machine against **ESP-IDF v6.1** (EIM, `C:\esp\v6.1\e
 
 The repository therefore moves out of the OneDrive profile path to a short root at `C:\projects\crowsnest`, with the firmware at `C:\projects\crowsnest\firmware\crowsnest-display`. Git is the backup mechanism; OneDrive sync was never appropriate for a tree that generates hundreds of megabytes of build output. This is a prerequisite for Phase 3, not a preference.
 
-**F4 — The board uses native USB-Serial/JTAG, not a CH34x bridge.** `esptool chip-id` against the reference panel reports:
+**F4 — The board uses native USB-Serial/JTAG, not a CH34x bridge.** `esptool chip-id` against the reference device reports:
 
 ```
 Chip type:   ESP32-S3 (QFN56) (revision v0.2)
@@ -1236,7 +1253,7 @@ The manager validates the extracted tree against `.component_hash` and, on a mat
 
 | Pattern | Where | Why |
 |---|---|---|
-| Ports and Adapters | `Core` defines `ISimParameterGateway` / `IPanelDevice`; `Sim` and `Device` implement them | Domain logic is testable without the sim or the hardware, which are the two things you cannot put in CI |
+| Ports and Adapters | `Core` defines `ISimParameterGateway` / `IDevice`; `Sim` and `Device` implement them | Domain logic is testable without the sim or the hardware, which are the two things you cannot put in CI |
 | **Registry / data-driven config** | `ParameterRegistry` loaded from embedded JSON | Adding NAV, COM 2, or the autopilot becomes content, not code. This is the single most important pattern for the extension roadmap |
 | **Module / contribution** | `IPanelModule` + `PanelBuilder`, registered in `PanelCatalog` | A panel is a vertical slice that contributes parameters, pages, formatters and behaviour through one seam. Feature co-location without assembly sprawl |
 | Strategy | `IValueGrid`, `IEncoderAcceleration`, `IDeviceTransport`, `IValueFormatter` | A frequency, an altitude and a squawk code differ only in which strategy they carry |
@@ -1248,7 +1265,7 @@ The manager validates the extracted tree against `.component_hash` and, on a mat
 | **Capability negotiation** | `DeviceCapabilities` from the `hello` handshake | The host adapts its layout to whatever board is plugged in, rather than the firmware adapting to the host |
 | Decorator | `SimConnectSupervisor` wrapping `SimConnectClient` | Reconnection logic stays out of connection logic |
 | Builder | `DataDefinitionBuilder`, `BindingCompiler` | SimConnect data definitions are order-dependent and easy to get wrong imperatively |
-| Adapter | `SimConnectParameterGateway`, `PanelDeviceConnection`, the BSP shim | Translate between the domain and three unpleasant external APIs |
+| Adapter | `SimConnectParameterGateway`, `DeviceConnection`, the BSP shim | Translate between the domain and three unpleasant external APIs |
 | Producer/Consumer | `Channel<BridgeEvent>` | One event loop, no locks in `Core` |
 | Null Object | `FakeParameterGateway`, `LoopbackTransport` | Develop and demo the whole system with neither sim nor hardware present |
 
@@ -1316,26 +1333,26 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 | **4 — Ship v1** | `Crowsnest.Tray` + `Crowsnest.Installer` | Signed MSI installs, autostarts, appears in Add/Remove Programs, survives sim restart and cable unplug |
 | **5 — Radios** | NAV 1, COM 2, NAV 2, page navigation | One new `NavPanelModule` + one line in `PanelCatalog`. **If this phase requires changes outside `Panels/Nav/`, the §5 abstraction failed and should be revisited before phase 6** |
 | **6 — Autopilot** | Altitude, heading, vertical speed, airspeed | Exercises `SignedLinearGrid`, `WrappingGrid`, and three-level cursors |
-| **6.5 — Multi-panel** | `IPanelDeviceManager`, role assignment UI, OTA update flow | Three panels on one hub, each assigned different pages, sharing tuning state; all three update from one tray action |
+| **6.5 — Multi-device** | `IDeviceManager`, role assignment UI, OTA update flow | Three devices on one hub, each assigned different pages, sharing tuning state; all three update from one tray action |
 | **7 — Portability** | Second board port + Wi-Fi transport | A board Crowsnest was not designed against runs the unmodified `crowsnest_ui` |
 
-**Phase 1 demo, 2026-09-27.** `host/tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `PanelDeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedPanel` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
+**Phase 1 demo, 2026-09-27.** `host/tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `DeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedDevice` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
 
-**First run with the real panel, 2026-09-27** (`Crowsnest.DevConsole` → `Crowsnest.Host`, CrowPanel fw 0.1.0 on COM4, MSFS C172). The whole chain worked first time — knob → host → SimConnect → cockpit radio, and the cockpit knob back to the panel — with four findings, all fixed in the firmware and **not yet flashed or verified**:
+**First run with the real device, 2026-09-27** (`Crowsnest.DevConsole` → `Crowsnest.Host`, CrowPanel fw 0.1.0 on COM4, MSFS C172). The whole chain worked first time — knob → host → SimConnect → cockpit radio, and the cockpit knob back to the device — with four findings, all fixed in the firmware and **not yet flashed or verified**:
 
 - **The encoder is half-step: two edges per detent, not four.** At 4 the value moved on every other click. `crowsnest_input` now uses `ENCODER_EDGES_PER_DETENT 2`, and the hello reports `detents_per_click = 1`, since the shim already converts edges to clicks.
 - **Direction was reversed** (anticlockwise increased). `ENCODER_CLOCKWISE_SIGN (-1)` in `crowsnest_input` fixes it; direction is board wiring, so it belongs in the per-board shim.
-- **The panel froze after the host stopped.** Two causes: the firmware never noticed the host had gone, so it kept showing the last frame with a dead knob; and after a host restart it discarded every frame until the new session's revisions overtook the old one's. Now a `hello` resets the applied revision, and 7 s with no frame (past the host's three missed 2 s pings) returns the panel to the "waiting for Crowsnest" screen.
+- **The device froze after the host stopped.** Two causes: the firmware never noticed the host had gone, so it kept showing the last frame with a dead knob; and after a host restart it discarded every frame until the new session's revisions overtook the old one's. Now a `hello` resets the applied revision, and 7 s with no frame (past the host's three missed 2 s pings) returns the panel to the "waiting for Crowsnest" screen.
 - **Tap should swap** — the host already maps it (§5.7). **Implemented and verified 2026-09-29** (fw 0.2.0): `bsp_touch_init`/`bsp_touch_read` poll the CST8xx at 0x15 through the one I2C mutex (esp-bsp's `esp_lcd_touch` drivers open their own I2C IO and would bypass it), resetting it via expander P0 and disabling a CST816's auto-sleep. `app_main` sends `tap` on lift for a touch under 400 ms that moved under 40 px. `has_touch` in the hello is true only if the controller answered, and a panel without one says so in a `warn` log the host now shows.
 
 Phase 0 exists because all four of the project's real unknowns are in it. Phase 5 is deliberately positioned as a **test of the architecture** rather than just a feature: if adding NAV 1 is not nearly free, that is worth knowing before the autopilot work starts.
 
 **0(a) — passed 2026-09-24.** `Crowsnest.SimSpike` against MSFS 2024 (`SunRise 12.2 build 282174.999`, SimConnect 12.2), default GA aircraft on the ground, using the SDK's managed wrapper under .NET 10. `COM ACTIVE FREQUENCY:1` / `COM STANDBY FREQUENCY:1` read as `Hz` / `FLOAT64` via `RequestDataOnSimObject` at `VISUAL_FRAME` with `CHANGED`; `COM_STBY_RADIO_SET_HZ` written with `TransmitClientEvent` at highest group priority. **Write to read-back: 9.8 ms and 16.3 ms** (write, then restore) — about one visual frame, so the pending/confirmed window in `TuningSession` will be short in practice. Cockpit knob turns arrive as individual change notifications at 25 kHz steps. The console loop works with an `EventWaitHandle` and no window handle, so `Crowsnest.Sim` needs no hidden message window. `COM_STBY_RADIO_SWAP` also verified: active and standby exchange in a single change notification, and a manual standby write read back in 12.0 ms. Not yet exercised: 8.33 kHz spacing and a study-level aircraft.
 
-**0(c) — passed 2026-09-24.** `Crowsnest.LinkSpike` against the reference panel (fw 0.1.0, COM4), 500 pings after a 10-ping warm-up: **min 0.37 ms, median 0.98 ms, p95 1.05 ms, max 1.32 ms** — roughly 20× inside the budget. Three further back-to-back runs without resetting the panel all reconnected and stayed under 1 ms median, so a host restart does not strand the panel. Two observations from the session:
+**0(c) — passed 2026-09-24.** `Crowsnest.LinkSpike` against the reference device (fw 0.1.0, COM4), 500 pings after a 10-ping warm-up: **min 0.37 ms, median 0.98 ms, p95 1.05 ms, max 1.32 ms** — roughly 20× inside the budget. Three further back-to-back runs without resetting the panel all reconnected and stayed under 1 ms median, so a host restart does not strand the panel. Two observations from the session:
 
 - **Opening the port with DTR and RTS both asserted resets the chip, and the wrong sequence leaves it in the ROM bootloader** (`boot:0x0 (DOWNLOAD(USB/UART0))`, `waiting for download`) — silent to the link and indistinguishable from dead firmware. Stock serial monitors do this. Recovery is an RTS pulse with DTR low (esptool's hard reset). This is the same hazard `SerialPortTransport` guards against; it applies equally to every ad-hoc tool pointed at the port.
-- **Open: the panel was silent at the start of the session** — it enumerated but ignored the host hello after sitting connected overnight, and a reset cleared it. Not reproduced. Suspects are USB suspend across PC sleep leaving the USB-Serial/JTAG driver wedged, or a firmware hang after long uptime. Worth a soak test before phase 4, since "survives cable unplug" is an exit criterion and this looks like its neighbour.
+- **Open: the device was silent at the start of the session** — it enumerated but ignored the host hello after sitting connected overnight, and a reset cleared it. Not reproduced. Suspects are USB suspend across PC sleep leaving the USB-Serial/JTAG driver wedged, or a firmware hang after long uptime. Worth a soak test before phase 4, since "survives cable unplug" is an exit criterion and this looks like its neighbour.
 
 **Phase 0 prerequisites.** Three machine-level installs gate the spikes, none of them project-scoped, all worth doing before the week starts rather than during it:
 
@@ -1343,7 +1360,7 @@ Phase 0 exists because all four of the project's real unknowns are in it. Phase 
 |---|---|---|
 | **MSFS 2024 SDK** | 0(a) | Provides `SimConnect.dll` (native, x64) and `Microsoft.FlightSimulator.SimConnect.dll` (managed wrapper) under `%MSFS2024_SDK%\SimConnect SDK\lib\`. Vendor both into the repo rather than referencing the SDK path, so the build is not machine-specific |
 | **ESP-IDF 6.1 via EIM** | 0(b), 0(d) | See §9.3. Machine-level; the repo carries the install configuration, not the toolchain |
-| **USB-UART bridge drivers** | 0(b), 0(c) | `eim install-drivers`. **This is the one that silently blocks the hardware spikes** — with no CH34x driver the panel does not enumerate as a COM port, and the failure looks like a dead board rather than a missing driver. Do it before first plug-in |
+| **USB-UART bridge drivers** | 0(b), 0(c) | `eim install-drivers`. **This is the one that silently blocks the hardware spikes** — with no CH34x driver the device does not enumerate as a COM port, and the failure looks like a dead board rather than a missing driver. Do it before first plug-in |
 
 The driver step is called out separately because it is the only prerequisite whose absence produces a misleading symptom. The other two fail loudly at build time.
 
@@ -1360,7 +1377,7 @@ The driver step is called out separately because it is the only prerequisite who
 | **I²C contention between touch reads and knob-button polling** — an open esp-bsp issue causes aborts on the M5Dial, and the CrowPanel shares the hazard | Medium | Medium | Single I²C mutex from day one |
 | RGB panel tearing under Wi-Fi load | Medium | Low in v1 | v1 is serial-only; measure before committing to Wi-Fi in phase 7 |
 | `SimConnect.dll` redistribution terms | Low | High if wrong | Read the MSFS SDK licence before bundling. Fallback is to require an SDK install or locate the DLL at runtime |
-| **Hub cannot supply 5 A** — bus-powered hubs give 500–900 mA/port and many "powered" hubs ship a 2 A adapter | High if unspecified | High — brown-outs mid-flash | Specify a 40 W+ hub with ≥1 A per port; never OTA more than one panel at a time |
+| **Hub cannot supply 5 A** — bus-powered hubs give 500–900 mA/port and many "powered" hubs ship a 2 A adapter | High if unspecified | High — brown-outs mid-flash | Specify a 40 W+ hub with ≥1 A per port; never OTA more than one device at a time |
 | **Windows renumbers COM ports** across reboots with five identical VID/PID devices | Certain | High if port-keyed | Identity is the eFuse MAC from the `hello` frame; nothing keys off a port name |
 | esptool's GPL-2.0 licence versus a closed-source installer | Medium | Medium | OTA over the existing link avoids the dependency; resolve before adopting esptool |
 | Unsigned installer trips SmartScreen | High | Low | Budget for a signing certificate before public release |

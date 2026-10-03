@@ -19,24 +19,24 @@ public abstract record SimCommand
     public sealed record Invoke(string EventName) : SimCommand;
 }
 
-/// <summary>A frame for one panel.</summary>
-public sealed record PanelFrame(string PanelId, DisplayFrame Frame);
+/// <summary>A frame for one device.</summary>
+public sealed record DeviceFrame(string DeviceId, DisplayFrame Frame);
 
 /// <summary>What one event requires of the outside world. Sim commands go before the renders.</summary>
-public sealed record PanelEffects(IReadOnlyList<SimCommand> Sim, IReadOnlyList<PanelFrame> Frames)
+public sealed record PanelEffects(IReadOnlyList<SimCommand> Sim, IReadOnlyList<DeviceFrame> Frames)
 {
     public static PanelEffects None { get; } = new([], []);
 
-    /// <summary>The frame for <paramref name="panelId"/>, or null if it needs none.</summary>
-    public DisplayFrame? FrameFor(string panelId) => Frames.FirstOrDefault(f => f.PanelId == panelId)?.Frame;
+    /// <summary>The frame for <paramref name="deviceId"/>, or null if it needs none.</summary>
+    public DisplayFrame? FrameFor(string deviceId) => Frames.FirstOrDefault(f => f.DeviceId == deviceId)?.Frame;
 }
 
 /// <summary>
 /// The panels' behaviour with the I/O taken out (spec §5.7, §6.2). One <see cref="TuningSession"/>
-/// per parameter, shared by every panel, so two panels showing COM 1 tune the same value rather
-/// than fighting over it. Each panel keeps its own page, revision, ack and turn timing, so panels
+/// per parameter, shared by every device, so two devices showing COM 1 tune the same value rather
+/// than fighting over it. Each device keeps its own page, revision, ack and turn timing, so devices
 /// navigate independently. Each call takes one event and returns what to do about it, including
-/// a frame for every panel whose screen it changed; <see cref="PanelCoordinator"/> does it.
+/// a frame for every device whose screen it changed; <see cref="PanelCoordinator"/> does it.
 ///
 /// Pure and single-threaded, like the sessions it holds: time comes in as <c>now</c>, and the
 /// coordinator's one event loop is the only caller.
@@ -49,14 +49,14 @@ public sealed class PanelEngine : IPanelContext
     private readonly IReadOnlyList<PanelPage> _pages;
     private readonly IInputActionMap _actions;
     private readonly IReadOnlyList<IPanelBehaviour> _behaviours;
-    private readonly Dictionary<string, PanelView> _panels = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DeviceView> _devices = new(StringComparer.Ordinal);
 
-    // Parameters whose look changed while behaviours ran, so the panels showing them redraw.
+    // Parameters whose look changed while behaviours ran, so the devices showing them redraw.
     private readonly HashSet<ParameterId> _behaviourChanged = [];
 
     private SimConnectionState _sim = SimConnectionState.Disconnected;
 
-    /// <param name="pages">The pages every panel shows, until panels have assignments (spec §6.2).</param>
+    /// <param name="pages">The pages every device shows, until devices have assignments (spec §6.2).</param>
     public PanelEngine(
         ParameterRegistry registry,
         IReadOnlyList<PanelPage> pages,
@@ -91,44 +91,44 @@ public sealed class PanelEngine : IPanelContext
         _sessions = registry.All.ToDictionary(p => p.Id, p => new TuningSession(p, options));
     }
 
-    public IReadOnlyCollection<string> Panels => _panels.Keys;
+    public IReadOnlyCollection<string> Devices => _devices.Keys;
 
-    public PanelPage CurrentPage(string panelId) => View(panelId).Pages.Current;
+    public PanelPage CurrentPage(string deviceId) => View(deviceId).Pages.Current;
 
     public TuningSession Session(ParameterId id) => _sessions[id];
 
-    /// <summary>A panel has connected. It starts on the first page and gets its first frame.</summary>
-    public PanelEffects Join(string panelId)
+    /// <summary>A device has connected. It starts on the first page and gets its first frame.</summary>
+    public PanelEffects Join(string deviceId)
     {
-        ArgumentException.ThrowIfNullOrEmpty(panelId);
+        ArgumentException.ThrowIfNullOrEmpty(deviceId);
 
-        PanelView view = new(panelId, new PageNavigator(_pages));
-        if (!_panels.TryAdd(panelId, view))
+        DeviceView view = new(deviceId, new PageNavigator(_pages));
+        if (!_devices.TryAdd(deviceId, view))
         {
-            throw new InvalidOperationException($"Panel '{panelId}' has already joined.");
+            throw new InvalidOperationException($"Device '{deviceId}' has already joined.");
         }
 
         return Redraw(view);
     }
 
-    /// <summary>A panel has gone. Unknown ids are ignored, so leaving twice is harmless.</summary>
-    public void Leave(string panelId) => _panels.Remove(panelId);
+    /// <summary>A device has gone. Unknown ids are ignored, so leaving twice is harmless.</summary>
+    public void Leave(string deviceId) => _devices.Remove(deviceId);
 
     /// <summary>
-    /// A panel restarted under an open port. It numbers its inputs from 1 again and has a blank
+    /// A device restarted under an open port. It numbers its inputs from 1 again and has a blank
     /// screen, so the ack and the acceleration clock start over and it gets the current frame.
     /// It keeps its page: the pilot was on it a moment ago.
     /// </summary>
-    public PanelEffects OnPanelRestarted(string panelId)
+    public PanelEffects OnDeviceRestarted(string deviceId)
     {
-        PanelView view = View(panelId);
+        DeviceView view = View(deviceId);
         view.AckSequence = 0;
         view.LastTurnAt = null;
         return Redraw(view);
     }
 
-    /// <summary>The frame for a panel's current state, whether or not anything changed.</summary>
-    public DisplayFrame Render(string panelId) => Render(View(panelId));
+    /// <summary>The frame for a device's current state, whether or not anything changed.</summary>
+    public DisplayFrame Render(string deviceId) => Render(View(deviceId));
 
     public PanelEffects OnSimConnection(SimConnectionState state)
     {
@@ -138,7 +138,7 @@ public sealed class PanelEngine : IPanelContext
         }
 
         _sim = state;
-        return new PanelEffects([], [.. _panels.Values.Select(v => new PanelFrame(v.Id, Render(v)))]);
+        return new PanelEffects([], [.. _devices.Values.Select(v => new DeviceFrame(v.Id, Render(v)))]);
     }
 
     public PanelEffects OnSnapshot(ParameterSnapshot snapshot)
@@ -168,11 +168,11 @@ public sealed class PanelEngine : IPanelContext
         return Effects([], changed);
     }
 
-    public PanelEffects OnInput(string panelId, DeviceInputEvent input, DateTimeOffset now)
+    public PanelEffects OnInput(string deviceId, DeviceInputEvent input, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        if (!_panels.TryGetValue(panelId, out PanelView? view))
+        if (!_devices.TryGetValue(deviceId, out DeviceView? view))
         {
             // It left, with this input still queued behind the leave.
             return PanelEffects.None;
@@ -181,7 +181,7 @@ public sealed class PanelEngine : IPanelContext
         // Acknowledge every input, even ignored ones, so the device can stop showing it as in flight.
         bool acked = input.Sequence > view.AckSequence;
         view.AckSequence = Math.Max(view.AckSequence, input.Sequence);
-        PanelView? toAck = acked ? view : null;
+        DeviceView? toAck = acked ? view : null;
 
         BridgeCommand? command = _actions.Resolve(input, new PanelState(view.Pages.Current));
         return command is null ? Effects([], [], toAck) : Execute(view, command, input, now, toAck);
@@ -212,7 +212,7 @@ public sealed class PanelEngine : IPanelContext
         return Effects(sim, changed);
     }
 
-    private PanelEffects Execute(PanelView view, BridgeCommand command, DeviceInputEvent input, DateTimeOffset now, PanelView? toAck)
+    private PanelEffects Execute(DeviceView view, BridgeCommand command, DeviceInputEvent input, DateTimeOffset now, DeviceView? toAck)
     {
         TuningSession tuned = _sessions[view.Pages.Current.Fields[0]];
 
@@ -230,7 +230,7 @@ public sealed class PanelEngine : IPanelContext
                     toAck);
             }
 
-            // The cursor belongs to the session, so every panel showing the value follows it.
+            // The cursor belongs to the session, so every device showing the value follows it.
             case BridgeCommand.CycleCursor:
                 return Effects([], tuned.ToggleCursor().DisplayChanged ? [tuned.Parameter.Id] : [], toAck);
 
@@ -278,26 +278,26 @@ public sealed class PanelEngine : IPanelContext
     }
 
     /// <summary>
-    /// The sim commands, a frame for every panel showing a changed parameter, and one for
+    /// The sim commands, a frame for every device showing a changed parameter, and one for
     /// <paramref name="toAck"/> whatever it shows, since it has an input to acknowledge.
     /// </summary>
-    private PanelEffects Effects(IReadOnlyList<SimCommand> sim, IReadOnlyCollection<ParameterId> changed, PanelView? toAck = null)
+    private PanelEffects Effects(IReadOnlyList<SimCommand> sim, IReadOnlyCollection<ParameterId> changed, DeviceView? toAck = null)
     {
-        List<PanelFrame> frames = [];
-        foreach (PanelView view in _panels.Values)
+        List<DeviceFrame> frames = [];
+        foreach (DeviceView view in _devices.Values)
         {
             if (view == toAck || view.Pages.Current.Fields.Any(changed.Contains))
             {
-                frames.Add(new PanelFrame(view.Id, Render(view)));
+                frames.Add(new DeviceFrame(view.Id, Render(view)));
             }
         }
 
         return sim.Count == 0 && frames.Count == 0 ? PanelEffects.None : new PanelEffects(sim, frames);
     }
 
-    private PanelEffects Redraw(PanelView view) => new([], [new PanelFrame(view.Id, Render(view))]);
+    private PanelEffects Redraw(DeviceView view) => new([], [new DeviceFrame(view.Id, Render(view))]);
 
-    private DisplayFrame Render(PanelView view)
+    private DisplayFrame Render(DeviceView view)
     {
         PanelPage page = view.Pages.Current;
         List<FieldDescriptor> fields = [];
@@ -330,15 +330,15 @@ public sealed class PanelEngine : IPanelContext
             AckSequence: view.AckSequence);
     }
 
-    private PanelView View(string panelId) =>
-        _panels.TryGetValue(panelId, out PanelView? view)
+    private DeviceView View(string deviceId) =>
+        _devices.TryGetValue(deviceId, out DeviceView? view)
             ? view
-            : throw new InvalidOperationException($"Panel '{panelId}' has not joined.");
+            : throw new InvalidOperationException($"Device '{deviceId}' has not joined.");
 
     private static bool IsPending(TuningSession session) => session.Status == PendingWriteStatus.AwaitingConfirmation;
 
-    /// <summary>What belongs to one panel rather than to the sim: where it is, and what it has seen.</summary>
-    private sealed class PanelView(string id, PageNavigator pages)
+    /// <summary>What belongs to one device rather than to the sim: where it is, and what it has seen.</summary>
+    private sealed class DeviceView(string id, PageNavigator pages)
     {
         public string Id { get; } = id;
 

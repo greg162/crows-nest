@@ -61,8 +61,8 @@ internal sealed class FakeSimGateway : ISimParameterGateway
     }
 }
 
-/// <summary>A panel that records the frames it is sent and delivers the inputs the test sends.</summary>
-internal sealed class FakePanelDevice : IPanelDevice
+/// <summary>A device that records the frames it is sent and delivers the inputs the test sends.</summary>
+internal sealed class FakeDevice : IDevice
 {
     private readonly Channel<DeviceInputEvent> _inputs = Channel.CreateUnbounded<DeviceInputEvent>();
     private long _sequence;

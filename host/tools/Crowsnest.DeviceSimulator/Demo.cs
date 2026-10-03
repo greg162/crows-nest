@@ -17,8 +17,8 @@ namespace Crowsnest.DeviceSimulator;
 
 /// <summary>
 /// The real host stack end to end: <see cref="PanelCoordinator"/> with the shipped registry and
-/// pages, talking to a sim on one side and, through <see cref="PanelDeviceConnection"/>, the wire
-/// protocol and a loopback link, to a <see cref="SimulatedPanel"/> on the other.
+/// pages, talking to a sim on one side and, through <see cref="DeviceConnection"/>, the wire
+/// protocol and a loopback link, to a <see cref="SimulatedDevice"/> on the other.
 ///
 /// The sim is either a <see cref="FakeParameterGateway"/>, so only the sim and the glass are
 /// pretend, or with <c>--msfs</c> the real <see cref="SimConnectParameterGateway"/>, so only the
@@ -32,22 +32,22 @@ internal sealed class Demo : IAsyncDisposable
     private static readonly ParameterId ComActive = new("com1.active");
 
     private readonly CancellationTokenSource _stop = new();
-    private readonly SimulatedPanel _panel;
-    private readonly PanelDeviceConnection _device;
+    private readonly SimulatedDevice _simulated;
+    private readonly DeviceConnection _device;
     private readonly List<string> _log = [];
     private readonly int _logLines;
     private readonly Lock _gate = new();
     private readonly ISimParameterGateway _sim;
     private readonly SimConnectParameterGateway? _msfs;
-    private Task? _panelLoop;
+    private Task? _simulatedLoop;
     private Task? _hostLoop;
     private Task? _simLoop;
 
     private Demo(bool msfs)
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        _panel = new SimulatedPanel(deviceEnd);
-        _device = new PanelDeviceConnection(hostEnd);
+        _simulated = new SimulatedDevice(deviceEnd);
+        _device = new DeviceConnection(hostEnd);
 
         Setup = DefaultParameters.Load();
         if (msfs)
@@ -100,19 +100,19 @@ internal sealed class Demo : IAsyncDisposable
             switch (key.Key)
             {
                 case ConsoleKey.RightArrow:
-                    await demo._panel.TurnEncoderAsync(fast);
+                    await demo._simulated.TurnEncoderAsync(fast);
                     break;
                 case ConsoleKey.LeftArrow:
-                    await demo._panel.TurnEncoderAsync(-fast);
+                    await demo._simulated.TurnEncoderAsync(-fast);
                     break;
                 case ConsoleKey.Spacebar:
-                    await demo._panel.PressKnobAsync(held: false);
+                    await demo._simulated.PressKnobAsync(held: false);
                     break;
                 case ConsoleKey.Enter:
-                    await demo._panel.PressKnobAsync(held: true);
+                    await demo._simulated.PressKnobAsync(held: true);
                     break;
                 case ConsoleKey.T:
-                    await demo._panel.TapAsync(240, 240);
+                    await demo._simulated.TapAsync(240, 240);
                     break;
                 case ConsoleKey.S when demo.Fake is { } fake:
                     fake.ToggleSpacing();
@@ -139,7 +139,7 @@ internal sealed class Demo : IAsyncDisposable
         }
     }
 
-    /// <summary>A fixed tour of the behaviour against the fake sim, printing the panel after each step. Needs no keyboard.</summary>
+    /// <summary>A fixed tour of the behaviour against the fake sim, printing the device's screen after each step. Needs no keyboard.</summary>
     public static async Task RunScriptAsync()
     {
         await using Demo demo = await StartAsync(msfs: false);
@@ -154,15 +154,15 @@ internal sealed class Demo : IAsyncDisposable
         }
 
         await Step("start: the sim reports COM 1", () => Task.CompletedTask, 400);
-        await Step("short press: cursor to kHz", () => demo._panel.PressKnobAsync().AsTask(), 100);
-        await Step("turn +2, look at once: pending", () => demo._panel.TurnEncoderAsync(2).AsTask(), 40);
+        await Step("short press: cursor to kHz", () => demo._simulated.PressKnobAsync().AsTask(), 100);
+        await Step("turn +2, look at once: pending", () => demo._simulated.TurnEncoderAsync(2).AsTask(), 40);
         await Step("…a moment later: written and confirmed", () => Task.CompletedTask, 300);
-        await Step("tap: swap", () => demo._panel.TapAsync(240, 240).AsTask());
+        await Step("tap: swap", () => demo._simulated.TapAsync(240, 240).AsTask());
         await Step("cockpit spacing switch to 8.33, then turn +1", async () =>
         {
             fake.ToggleSpacing();
             await Task.Delay(100);
-            await demo._panel.TurnEncoderAsync(1);
+            await demo._simulated.TurnEncoderAsync(1);
         }, 400);
         await Step("cockpit spacing switch back to 25 kHz: the sim snaps", () =>
         {
@@ -172,7 +172,7 @@ internal sealed class Demo : IAsyncDisposable
         await Step("the sim stops accepting writes; turn +1 and wait out the settle timeout", async () =>
         {
             fake.IgnoreWrites = true;
-            await demo._panel.TurnEncoderAsync(1);
+            await demo._simulated.TurnEncoderAsync(1);
         }, 1_900);
         await Step("someone turns the cockpit knob", () =>
         {
@@ -185,12 +185,12 @@ internal sealed class Demo : IAsyncDisposable
     private static async Task<Demo> StartAsync(bool msfs)
     {
         Demo demo = new(msfs);
-        demo._panel.Rendered = state =>
+        demo._simulated.Rendered = state =>
         {
             demo.Latest = state;
             demo.Changed?.Invoke();
         };
-        demo._panelLoop = demo._panel.RunAsync(demo._stop.Token);
+        demo._simulatedLoop = demo._simulated.RunAsync(demo._stop.Token);
 
         await demo._device.ConnectAsync(demo._stop.Token);
 
@@ -204,7 +204,7 @@ internal sealed class Demo : IAsyncDisposable
             TuningOptions.Default, TimeProvider.System, e => demo.Note($"effect failed: {e.Message}"));
         demo._hostLoop = Task.WhenAll(
             coordinator.RunAsync(demo._stop.Token),
-            coordinator.RunPanelAsync(demo._device.Identity!.HardwareId, demo._device, demo._stop.Token));
+            coordinator.RunDeviceAsync(demo._device.Identity!.HardwareId, demo._device, demo._stop.Token));
 
         return demo;
     }
@@ -224,7 +224,7 @@ internal sealed class Demo : IAsyncDisposable
     }
 
     /// <param name="fullScreen">
-    /// Redraw the whole screen in place (interactive). Otherwise append the panel, for --script.
+    /// Redraw the whole screen in place (interactive). Otherwise append the device's screen, for --script.
     /// </param>
     private void Draw(bool fullScreen)
     {
@@ -233,7 +233,7 @@ internal sealed class Demo : IAsyncDisposable
             StringBuilder screen = new();
             if (Latest is { } state)
             {
-                screen.Append(ConsolePanelRenderer.Render(state));
+                screen.Append(ConsoleDeviceRenderer.Render(state));
             }
 
             if (Fake is { } fake)
@@ -292,9 +292,9 @@ internal sealed class Demo : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();
-        await Task.WhenAll(new[] { _hostLoop, _simLoop, _panelLoop }.OfType<Task>().Select(t => t.ContinueWith(_ => { }, TaskScheduler.Default)));
+        await Task.WhenAll(new[] { _hostLoop, _simLoop, _simulatedLoop }.OfType<Task>().Select(t => t.ContinueWith(_ => { }, TaskScheduler.Default)));
         await _device.DisposeAsync();
-        await _panel.DisposeAsync();
+        await _simulated.DisposeAsync();
         await _sim.DisposeAsync();
         _stop.Dispose();
     }

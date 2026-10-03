@@ -8,13 +8,13 @@ using Crowsnest.Device.Transport;
 namespace Crowsnest.Device;
 
 /// <summary>
-/// One panel: transport, codec and heartbeat (spec §6). Implements Core's port, so the
+/// One device: transport, codec and heartbeat (spec §6). Implements Core's port, so the
 /// coordinator above it never learns whether this is a real board or the simulator.
 /// </summary>
-public sealed class PanelDeviceConnection : IPanelDevice
+public sealed class DeviceConnection : IDevice
 {
     private readonly IDeviceTransport _transport;
-    private readonly PanelConnectionOptions _options;
+    private readonly DeviceConnectionOptions _options;
     private readonly TimeProvider _time;
     private readonly BehaviorSubject<DeviceConnectionState> _state = new(DeviceConnectionState.Disconnected);
     private readonly Channel<DeviceInputEvent> _inputs =
@@ -35,15 +35,15 @@ public sealed class PanelDeviceConnection : IPanelDevice
     private Exception? _fault;
     private bool _disposed;
 
-    public PanelDeviceConnection(
+    public DeviceConnection(
         IDeviceTransport transport,
-        PanelConnectionOptions? options = null,
+        DeviceConnectionOptions? options = null,
         TimeProvider? time = null)
     {
         ArgumentNullException.ThrowIfNull(transport);
 
         _transport = transport;
-        _options = options ?? new PanelConnectionOptions();
+        _options = options ?? new DeviceConnectionOptions();
         _time = time ?? TimeProvider.System;
     }
 
@@ -54,7 +54,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
 
     public DeviceCapabilities? Capabilities { get; private set; }
 
-    /// <summary>Stable panel identity from the hello frame; null until the handshake completes.</summary>
+    /// <summary>Stable device identity from the hello frame; null until the handshake completes.</summary>
     public DeviceIdentity? Identity { get; private set; }
 
     /// <summary>
@@ -71,7 +71,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
     /// <summary>
     /// Opens the transport and completes the hello handshake. Throws
     /// <see cref="TimeoutException"/> when the device never identifies itself, which is how
-    /// port probing rejects a candidate that is not a panel.
+    /// port probing rejects a candidate that is not a Crowsnest device.
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct)
     {
@@ -99,7 +99,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
             {
                 _state.OnNext(DeviceConnectionState.Faulted);
                 throw new TimeoutException(
-                    $"No hello frame within {_options.HandshakeTimeout.TotalMilliseconds:F0} ms. Not a Crowsnest panel, or its firmware is not speaking.");
+                    $"No hello frame within {_options.HandshakeTimeout.TotalMilliseconds:F0} ms. Not a Crowsnest device, or its firmware is not speaking.");
             }
         }
 
@@ -122,9 +122,9 @@ public sealed class PanelDeviceConnection : IPanelDevice
             ct);
 
     /// <summary>
-    /// The panel restarted under an open port: a crash, or the reset button. The ESP32-S3's
+    /// The device restarted under an open port: a crash, or the reset button. The ESP32-S3's
     /// USB serial port does not drop when the chip resets, so this hello is the only sign. The
-    /// panel is back on its waiting screen with nothing to show, so it gets its ack, and the
+    /// device is back on its waiting screen with nothing to show, so it gets its ack, and the
     /// state goes back through Handshaking to Connected, which makes the coordinator re-send
     /// the screen (found 2026-09-30).
     /// </summary>
@@ -133,9 +133,9 @@ public sealed class PanelDeviceConnection : IPanelDevice
         DeviceIdentity identity = ProtocolCodec.ToIdentity(hello);
         if (Identity is { } known && identity.HardwareId != known.HardwareId)
         {
-            // Panels are keyed on their hardware id (spec §6.2), so a different board on the same
-            // link is not a restart: fail, and let discovery meet it as the new panel it is.
-            Fail(new InvalidDataException($"Panel {known.HardwareId} was replaced by {identity.HardwareId} on the same link."));
+            // Devices are keyed on their hardware id (spec §6.2), so a different board on the same
+            // link is not a restart: fail, and let discovery meet it as the new device it is.
+            Fail(new InvalidDataException($"Device {known.HardwareId} was replaced by {identity.HardwareId} on the same link."));
             return;
         }
 
@@ -205,7 +205,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
                     continue;
                 }
 
-                // A hello during the handshake may be a duplicate, as the panel repeats it every
+                // A hello during the handshake may be a duplicate, as the device repeats it every
                 // second until answered; ConnectAsync takes the first and acks it.
                 if (message is DeviceHello hello && _handshakeDone)
                 {
@@ -224,7 +224,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
             // later (found in review, 2026-09-30).
             if (!ct.IsCancellationRequested)
             {
-                Fail(new EndOfStreamException("The panel closed the link."));
+                Fail(new EndOfStreamException("The device closed the link."));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -303,7 +303,7 @@ public sealed class PanelDeviceConnection : IPanelDevice
 
                 if (Interlocked.Increment(ref _outstandingPings) > _options.MissedPongLimit)
                 {
-                    Fail(new TimeoutException($"The panel missed {_options.MissedPongLimit} pongs in a row."));
+                    Fail(new TimeoutException($"The device missed {_options.MissedPongLimit} pongs in a row."));
                     return;
                 }
 

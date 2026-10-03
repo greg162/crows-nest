@@ -4,7 +4,7 @@ using Crowsnest.Core.Application.Ports;
 using Crowsnest.Device;
 using Crowsnest.Device.Transport;
 
-// Spike 0(c): discover a panel, complete the handshake, put HELLO WORLD on the glass and
+// Spike 0(c): discover a device, complete the handshake, put HELLO WORLD on the glass and
 // measure USB CDC round-trip latency. The exit criterion is a median under 20 ms.
 //
 // Usage: Crowsnest.LinkSpike [COM4] [--pings 200] [--hold]
@@ -28,7 +28,7 @@ IReadOnlyList<string> ports = requestedPort is not null
 
 if (ports.Count == 0)
 {
-    Console.Error.WriteLine("No serial ports found. Is the panel plugged in?");
+    Console.Error.WriteLine("No serial ports found. Is the device plugged in?");
     return 1;
 }
 
@@ -37,7 +37,7 @@ foreach (string port in ports)
     Console.WriteLine($"probing {port} ...");
 
     var transport = new SerialPortTransport(port);
-    var device = new PanelDeviceConnection(transport);
+    var device = new DeviceConnection(transport);
     device.LogReceived = log => Console.WriteLine($"  [fw {log.Level}] {log.Message}");
 
     try
@@ -46,7 +46,7 @@ foreach (string port in ports)
     }
     catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
     {
-        Console.WriteLine($"  not a panel: {e.Message}");
+        Console.WriteLine($"  not a Crowsnest device: {e.Message}");
         await device.DisposeAsync();
         continue;
     }
@@ -102,10 +102,10 @@ foreach (string port in ports)
     return 0;
 }
 
-Console.Error.WriteLine("No panel answered on any port.");
+Console.Error.WriteLine("No device answered on any port.");
 return 2;
 
-static async Task MeasureAsync(PanelDeviceConnection device, int count, CancellationToken ct)
+static async Task MeasureAsync(DeviceConnection device, int count, CancellationToken ct)
 {
     // Warm the path: the first exchange pays for buffer allocation on both ends.
     for (int i = 0; i < 10; i++)

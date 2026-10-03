@@ -12,7 +12,7 @@ namespace Crowsnest.Device.Protocol;
     DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     // The spec writes "v" ahead of "t" (§6.1) and the firmware emits frames that way, but
     // System.Text.Json wants the type discriminator first and throws otherwise. Without
-    // this, every frame from a real panel is silently discarded as malformed.
+    // this, every frame from a real device is silently discarded as malformed.
     AllowOutOfOrderMetadataProperties = true)]
 [JsonSerializable(typeof(HostMessage))]
 [JsonSerializable(typeof(DeviceMessage))]

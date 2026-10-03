@@ -6,13 +6,13 @@ namespace Crowsnest.DeviceSimulator;
 /// <summary>
 /// The device half of the link, in C# (spec §11). It answers the handshake, pongs the
 /// heartbeat and surfaces every state frame it is told to render, so the whole PC side is
-/// developable before firmware exists — and so a real panel can be swapped in to work out
+/// developable before firmware exists — and so a real device can be swapped in to work out
 /// which end broke.
 ///
 /// It deliberately mirrors what the firmware's <c>crowsnest_link</c> does, including
 /// discarding any frame whose revision is not newer than the last one applied.
 /// </summary>
-public sealed class SimulatedPanel : IAsyncDisposable
+public sealed class SimulatedDevice : IAsyncDisposable
 {
     private readonly IDeviceTransport _transport;
     private readonly NdjsonFrameReader _reader;
@@ -24,7 +24,7 @@ public sealed class SimulatedPanel : IAsyncDisposable
     private long _sequence;
     private long _appliedRevision = -1;
 
-    public SimulatedPanel(
+    public SimulatedDevice(
         IDeviceTransport transport,
         string hardwareId = "a4cb8fdccc6c",
         string firmwareVersion = "0.1.0-sim")
@@ -53,7 +53,7 @@ public sealed class SimulatedPanel : IAsyncDisposable
         };
     }
 
-    /// <summary>Raised for each state frame the panel accepts.</summary>
+    /// <summary>Raised for each state frame the device accepts.</summary>
     public Action<HostState>? Rendered { get; set; }
 
     /// <summary>Raised for notices, which the real firmware shows as a banner.</summary>

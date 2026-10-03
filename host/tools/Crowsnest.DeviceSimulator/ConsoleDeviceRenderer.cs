@@ -4,11 +4,11 @@ using Crowsnest.Device.Protocol;
 namespace Crowsnest.DeviceSimulator;
 
 /// <summary>
-/// Draws a state frame the way the panel would, in characters. Crude on purpose: its job
+/// Draws a state frame the way the device would, in characters. Crude on purpose: its job
 /// is to prove the frame arrived intact and that the cursor span lands on the right digits,
 /// not to look like the real screen.
 /// </summary>
-public static class ConsolePanelRenderer
+public static class ConsoleDeviceRenderer
 {
     private const int Width = 34;
 

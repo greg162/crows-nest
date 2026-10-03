@@ -23,7 +23,7 @@ public sealed record DeviceHello : DeviceMessage
     [JsonPropertyName("fw")]
     public required string FirmwareVersion { get; init; }
 
-    /// <summary>eFuse MAC, lower case, no separators. The only stable panel identity (spec §6.2).</summary>
+    /// <summary>eFuse MAC, lower case, no separators. The only stable device identity (spec §6.2).</summary>
     [JsonPropertyName("id")]
     public required string HardwareId { get; init; }
 

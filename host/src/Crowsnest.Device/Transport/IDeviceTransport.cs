@@ -3,7 +3,7 @@ using System.IO.Pipelines;
 namespace Crowsnest.Device.Transport;
 
 /// <summary>
-/// A byte pipe to one panel (spec §6). Serial today, WebSocket in phase 7, loopback in tests —
+/// A byte pipe to one device (spec §6). Serial today, WebSocket in phase 7, loopback in tests —
 /// everything above this interface is transport-agnostic, including the OTA path.
 /// </summary>
 public interface IDeviceTransport : IAsyncDisposable

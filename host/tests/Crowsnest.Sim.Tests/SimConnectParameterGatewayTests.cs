@@ -192,7 +192,7 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
         await Eventually(() => _snapshots.Contains(new ParameterSnapshot(ComStandby, 124_850)), "the first values");
         _snapshots.Clear();
 
-        // A panel plugged back in: a new coordinator subscribes to what is already watched.
+        // The bridge restarting: a new coordinator subscribes to what is already watched.
         await _gateway.SubscribeAsync(DefaultParameters.Load().Registry.Subscriptions, CancellationToken.None);
         await Advance(TimeSpan.FromMilliseconds(200));
 

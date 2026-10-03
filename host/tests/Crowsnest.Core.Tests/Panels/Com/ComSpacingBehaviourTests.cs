@@ -18,7 +18,7 @@ public class ComSpacingBehaviourTests
     private static readonly ParameterId Active = new("com1.active");
     private static readonly ParameterId Spacing = new("com1.spacing");
 
-    private const string P = "panel";
+    private const string P = "device";
 
     private long _sequence;
 

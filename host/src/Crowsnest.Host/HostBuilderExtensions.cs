@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Crowsnest.Host;
 
-/// <summary>Composes the whole bridge (spec §8): the shipped panels, the SimConnect gateway, and the panel on USB.</summary>
+/// <summary>Composes the whole bridge (spec §8): the shipped panels, the SimConnect gateway, and the devices on USB.</summary>
 public static class HostBuilderExtensions
 {
     public static IHostApplicationBuilder AddCrowsnest(this IHostApplicationBuilder builder)

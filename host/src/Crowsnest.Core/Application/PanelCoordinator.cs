@@ -6,14 +6,14 @@ using Crowsnest.Core.Domain.Tuning;
 namespace Crowsnest.Core.Application;
 
 /// <summary>
-/// Connects the sim to the panels (spec §5.7, §6.2). Device inputs from every panel, sim values,
+/// Connects the sim to the devices (spec §5.7, §6.2). Inputs from every device, sim values,
 /// connection changes and a 20 ms tick all go onto one queue and are handled one at a time by a
 /// <see cref="PanelEngine"/>, so there are no locks anywhere in Core. The coordinator only moves
 /// events in and carries the engine's effects out: sim writes and swaps first, then the frames.
 ///
-/// One coordinator serves every panel, so panels share tuning sessions (§6.2: two panels on
+/// One coordinator serves every device, so devices share tuning sessions (§6.2: two devices on
 /// COM 1 must not fight over a pending write). <see cref="RunAsync"/> runs for the life of the
-/// bridge; panels come and go through <see cref="RunPanelAsync"/>, and one panel's link failing
+/// bridge; devices come and go through <see cref="RunDeviceAsync"/>, and one device's link failing
 /// never stops the others.
 ///
 /// It does not own the sim or the devices; whoever built them disposes them.
@@ -31,9 +31,9 @@ public sealed class PanelCoordinator
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     // Touched only by the loop.
-    private readonly Dictionary<string, IPanelDevice> _panels = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IDevice> _devices = new(StringComparer.Ordinal);
 
-    /// <param name="setup">The registry, the pages every panel shows, and panel runtime logic such as COM following the spacing mode (§5.8).</param>
+    /// <param name="setup">The registry, the pages every device shows, and panel runtime logic such as COM following the spacing mode (§5.8).</param>
     /// <param name="onEffectFailed">
     /// Called when a sim write, swap or render throws. The loop carries on: a lost write is
     /// caught by the settle timeout, a lost frame by the next one. Core has no logger (spec §4:
@@ -74,10 +74,10 @@ public sealed class PanelCoordinator
                 DateTimeOffset now = _time.GetUtcNow();
                 PanelEffects effects = e switch
                 {
-                    PanelJoined joined => Join(joined),
-                    PanelLeft left => Leave(left),
-                    InputReceived input => _engine.OnInput(input.PanelId, input.Input, now),
-                    PanelRestarted restarted when _panels.ContainsKey(restarted.PanelId) => _engine.OnPanelRestarted(restarted.PanelId),
+                    DeviceJoined joined => Join(joined),
+                    DeviceLeft left => Leave(left),
+                    InputReceived input => _engine.OnInput(input.DeviceId, input.Input, now),
+                    DeviceRestarted restarted when _devices.ContainsKey(restarted.DeviceId) => _engine.OnDeviceRestarted(restarted.DeviceId),
                     SnapshotReceived snapshot => _engine.OnSnapshot(snapshot.Snapshot),
                     SimStateChanged state => _engine.OnSimConnection(state.State),
                     Tick => _engine.OnTick(now),
@@ -100,18 +100,18 @@ public sealed class PanelCoordinator
     }
 
     /// <summary>
-    /// Serves one connected panel until <paramref name="ct"/> is cancelled (returns), the
-    /// coordinator stops (returns), or the panel's link fails (throws). The caller then disposes
+    /// Serves one connected device until <paramref name="ct"/> is cancelled (returns), the
+    /// coordinator stops (returns), or the device's link fails (throws). The caller then disposes
     /// the device; by then the loop has stopped rendering to it.
     /// </summary>
-    /// <param name="panelId">The panel's hardware id (spec §6.2): never a port name.</param>
-    public async Task RunPanelAsync(string panelId, IPanelDevice device, CancellationToken ct)
+    /// <param name="deviceId">The device's hardware id (spec §6.2): never a port name.</param>
+    public async Task RunDeviceAsync(string deviceId, IDevice device, CancellationToken ct)
     {
-        ArgumentException.ThrowIfNullOrEmpty(panelId);
+        ArgumentException.ThrowIfNullOrEmpty(deviceId);
         ArgumentNullException.ThrowIfNull(device);
 
         TaskCompletionSource joined = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!_events.Writer.TryWrite(new PanelJoined(panelId, device, joined)))
+        if (!_events.Writer.TryWrite(new DeviceJoined(deviceId, device, joined)))
         {
             return;
         }
@@ -121,11 +121,11 @@ public sealed class PanelCoordinator
             return;
         }
 
-        await joined.Task.ConfigureAwait(false); // a panel already serving this id throws here
+        await joined.Task.ConfigureAwait(false); // a device already serving this id throws here
 
         using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        DeviceWatch watch = new(_events, panelId);
-        Task pump = PumpInputs(panelId, device, stop.Token);
+        DeviceWatch watch = new(_events, deviceId);
+        Task pump = PumpInputs(deviceId, device, stop.Token);
         try
         {
             using IDisposable state = device.ConnectionState.Subscribe(watch);
@@ -134,8 +134,8 @@ public sealed class PanelCoordinator
             if (ended == watch.Faulted)
             {
                 // The link is dead (cable pulled, heartbeat lost) and a faulted connection never
-                // recovers by itself. The owner finds the panel again.
-                throw new IOException($"Panel {panelId}'s link failed.");
+                // recovers by itself. The owner finds the device again.
+                throw new IOException($"Device {deviceId}'s link failed.");
             }
 
             if (ended == pump)
@@ -143,7 +143,7 @@ public sealed class PanelCoordinator
                 await pump.ConfigureAwait(false); // the input stream's own error, if it had one
                 if (!ct.IsCancellationRequested)
                 {
-                    throw new IOException($"Panel {panelId} stopped sending input.");
+                    throw new IOException($"Device {deviceId} stopped sending input.");
                 }
             }
         }
@@ -158,32 +158,32 @@ public sealed class PanelCoordinator
 
             // Wait for the loop to forget the device, so nothing renders to it once disposed.
             TaskCompletionSource left = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (_events.Writer.TryWrite(new PanelLeft(panelId, device, left)))
+            if (_events.Writer.TryWrite(new DeviceLeft(deviceId, device, left)))
             {
                 await Task.WhenAny(left.Task, _stopped.Task).ConfigureAwait(false);
             }
         }
     }
 
-    private PanelEffects Join(PanelJoined joined)
+    private PanelEffects Join(DeviceJoined joined)
     {
-        if (!_panels.TryAdd(joined.PanelId, joined.Device))
+        if (!_devices.TryAdd(joined.DeviceId, joined.Device))
         {
-            joined.Done.TrySetException(new InvalidOperationException($"Panel {joined.PanelId} is already connected."));
+            joined.Done.TrySetException(new InvalidOperationException($"Device {joined.DeviceId} is already connected."));
             return PanelEffects.None;
         }
 
         joined.Done.TrySetResult();
-        return _engine.Join(joined.PanelId);
+        return _engine.Join(joined.DeviceId);
     }
 
-    private PanelEffects Leave(PanelLeft left)
+    private PanelEffects Leave(DeviceLeft left)
     {
-        // A refused duplicate leaves too; it must not take the real panel with it.
-        if (_panels.TryGetValue(left.PanelId, out IPanelDevice? device) && device == left.Device)
+        // A refused duplicate leaves too; it must not take the real device with it.
+        if (_devices.TryGetValue(left.DeviceId, out IDevice? device) && device == left.Device)
         {
-            _panels.Remove(left.PanelId);
-            _engine.Leave(left.PanelId);
+            _devices.Remove(left.DeviceId);
+            _engine.Leave(left.DeviceId);
         }
 
         left.Done.TrySetResult();
@@ -205,8 +205,8 @@ public sealed class PanelCoordinator
         if (effects.Frames.Count > 0)
         {
             await Task.WhenAll(effects.Frames
-                .Where(f => _panels.ContainsKey(f.PanelId))
-                .Select(f => Guard(_panels[f.PanelId].RenderAsync(f.Frame, ct)))).ConfigureAwait(false);
+                .Where(f => _devices.ContainsKey(f.DeviceId))
+                .Select(f => Guard(_devices[f.DeviceId].RenderAsync(f.Frame, ct)))).ConfigureAwait(false);
         }
     }
 
@@ -222,11 +222,11 @@ public sealed class PanelCoordinator
         }
     }
 
-    private async Task PumpInputs(string panelId, IPanelDevice device, CancellationToken ct)
+    private async Task PumpInputs(string deviceId, IDevice device, CancellationToken ct)
     {
         await foreach (DeviceInputEvent input in device.Inputs.WithCancellation(ct).ConfigureAwait(false))
         {
-            await _events.Writer.WriteAsync(new InputReceived(panelId, input), ct).ConfigureAwait(false);
+            await _events.Writer.WriteAsync(new InputReceived(deviceId, input), ct).ConfigureAwait(false);
         }
     }
 
@@ -266,13 +266,13 @@ public sealed class PanelCoordinator
 
     private abstract record BridgeEvent;
 
-    private sealed record PanelJoined(string PanelId, IPanelDevice Device, TaskCompletionSource Done) : BridgeEvent;
+    private sealed record DeviceJoined(string DeviceId, IDevice Device, TaskCompletionSource Done) : BridgeEvent;
 
-    private sealed record PanelLeft(string PanelId, IPanelDevice Device, TaskCompletionSource Done) : BridgeEvent;
+    private sealed record DeviceLeft(string DeviceId, IDevice Device, TaskCompletionSource Done) : BridgeEvent;
 
-    private sealed record PanelRestarted(string PanelId) : BridgeEvent;
+    private sealed record DeviceRestarted(string DeviceId) : BridgeEvent;
 
-    private sealed record InputReceived(string PanelId, DeviceInputEvent Input) : BridgeEvent;
+    private sealed record InputReceived(string DeviceId, DeviceInputEvent Input) : BridgeEvent;
 
     private sealed record SnapshotReceived(ParameterSnapshot Snapshot) : BridgeEvent;
 
@@ -295,11 +295,11 @@ public sealed class PanelCoordinator
     }
 
     /// <summary>
-    /// Watches one device's link. Connected again after anything else means the panel restarted
+    /// Watches one device's link. Connected again after anything else means the device restarted
     /// under an open port and needs its screen back. The first state seen is the one it joined
     /// in, which the join has already drawn.
     /// </summary>
-    private sealed class DeviceWatch(Channel<BridgeEvent> events, string panelId) : IObserver<DeviceConnectionState>
+    private sealed class DeviceWatch(Channel<BridgeEvent> events, string deviceId) : IObserver<DeviceConnectionState>
     {
         private readonly TaskCompletionSource _faulted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private DeviceConnectionState? _last;
@@ -314,7 +314,7 @@ public sealed class PanelCoordinator
             }
             else if (value == DeviceConnectionState.Connected && _last is { } last && last != DeviceConnectionState.Connected)
             {
-                events.Writer.TryWrite(new PanelRestarted(panelId));
+                events.Writer.TryWrite(new DeviceRestarted(deviceId));
             }
 
             _last = value;

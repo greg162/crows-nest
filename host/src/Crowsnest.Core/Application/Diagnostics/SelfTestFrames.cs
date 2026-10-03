@@ -3,10 +3,10 @@ using Crowsnest.Core.Application.Ports;
 namespace Crowsnest.Core.Application.Diagnostics;
 
 /// <summary>
-/// Frames with no sim behind them, for bringing a panel up and for the tray's
-/// "test this panel" action. They exercise each <see cref="PageLayout"/> the firmware
+/// Frames with no sim behind them, for bringing a device up and for the tray's
+/// "test this device" action. They exercise each <see cref="PageLayout"/> the firmware
 /// implements, which is what makes them worth having in Core rather than in a tool:
-/// a board port is correct when it renders these three the way the reference panel does.
+/// a board port is correct when it renders these three the way the reference device does.
 /// </summary>
 public static class SelfTestFrames
 {

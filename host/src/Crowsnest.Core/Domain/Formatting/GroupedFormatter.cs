@@ -8,7 +8,7 @@ namespace Crowsnest.Core.Domain.Formatting;
 ///
 /// The width varies with the value, so cursor spans over it count from the end: <c>..^4</c>
 /// is the thousands and up, <c>^3..^2</c> the hundreds digit (see <see cref="CursorSpans"/>).
-/// Always the invariant culture: the panel shows the same digits whatever Windows is set to.
+/// Always the invariant culture: the device shows the same digits whatever Windows is set to.
 /// </summary>
 public sealed class GroupedFormatter : IValueFormatter
 {

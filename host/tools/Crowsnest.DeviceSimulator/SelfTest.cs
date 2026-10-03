@@ -7,7 +7,7 @@ namespace Crowsnest.DeviceSimulator;
 
 /// <summary>
 /// The whole PC side of the vertical slice, with no hardware: Core builds the frames,
-/// Crowsnest.Device encodes and writes them, and SimulatedPanel decodes and "renders" them.
+/// Crowsnest.Device encodes and writes them, and SimulatedDevice decodes and "renders" them.
 /// Swap LoopbackTransport for SerialPortTransport and the same code drives a real board.
 /// Run with <c>--selftest</c>: renders the self-test frames and sends a few inputs back.
 /// </summary>
@@ -24,13 +24,13 @@ internal static class SelfTest
 
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
 
-        await using var panel = new SimulatedPanel(deviceEnd);
-        panel.Rendered = state => Console.WriteLine(ConsolePanelRenderer.Render(state));
-        panel.NoticeShown = notice => Console.WriteLine($"    notice: {notice.Kind}");
+        await using var simulated = new SimulatedDevice(deviceEnd);
+        simulated.Rendered = state => Console.WriteLine(ConsoleDeviceRenderer.Render(state));
+        simulated.NoticeShown = notice => Console.WriteLine($"    notice: {notice.Kind}");
 
-        Task panelLoop = panel.RunAsync(cts.Token);
+        Task simulatedLoop = simulated.RunAsync(cts.Token);
 
-        await using var device = new PanelDeviceConnection(hostEnd);
+        await using var device = new DeviceConnection(hostEnd);
         device.LogReceived = log => Console.WriteLine($"    [{log.Level}] {log.Message}");
 
         await device.ConnectAsync(cts.Token);
@@ -60,17 +60,17 @@ internal static class SelfTest
         }
 
         // And back the other way: the encoder, the knob and the screen.
-        await panel.TurnEncoderAsync(-3, cts.Token);
-        await panel.PressKnobAsync(held: false, ct: cts.Token);
-        await panel.TapAsync(240, 180, cts.Token);
+        await simulated.TurnEncoderAsync(-3, cts.Token);
+        await simulated.PressKnobAsync(held: false, ct: cts.Token);
+        await simulated.TapAsync(240, 180, cts.Token);
         await Task.Delay(150, cts.Token);
 
         // A stale frame must be dropped by the device, not rendered (spec §6.1).
         await device.RenderAsync(SelfTestFrames.HelloWorld(revision: 1), cts.Token);
         await Task.Delay(150, cts.Token);
-        Console.WriteLine($"stale frames dropped by the panel: {panel.StaleFramesDropped}");
+        Console.WriteLine($"stale frames dropped by the device: {simulated.StaleFramesDropped}");
 
         await cts.CancelAsync();
-        await Task.WhenAny(panelLoop, inputs, Task.Delay(500, CancellationToken.None));
+        await Task.WhenAny(simulatedLoop, inputs, Task.Delay(500, CancellationToken.None));
     }
 }

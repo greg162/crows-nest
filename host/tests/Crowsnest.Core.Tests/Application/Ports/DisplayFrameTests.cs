@@ -55,7 +55,7 @@ public class DisplayFrameTests
     }
 
     [Fact]
-    public void NoSelfTestFrameExceedsTheReferencePanelFieldCount()
+    public void NoSelfTestFrameExceedsTheReferenceDeviceFieldCount()
     {
         // The reference CrowPanel reports maxFields: 3 (spec §6.1).
         Assert.All(SelfTestFrames.All(), frame => Assert.InRange(frame.Fields.Count, 1, 3));

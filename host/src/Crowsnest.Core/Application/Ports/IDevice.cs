@@ -1,10 +1,10 @@
 namespace Crowsnest.Core.Application.Ports;
 
 /// <summary>
-/// A physical panel, as Core sees it (spec §5.6). Core knows nothing of serial ports,
+/// A device (one physical board), as Core sees it (spec §5.6). Core knows nothing of serial ports,
 /// JSON or USB descriptors — that is Crowsnest.Device's problem.
 /// </summary>
-public interface IPanelDevice : IAsyncDisposable
+public interface IDevice : IAsyncDisposable
 {
     IObservable<DeviceConnectionState> ConnectionState { get; }
 
@@ -50,7 +50,7 @@ public sealed record DeviceCapabilities(
     IReadOnlyList<PageLayout> Layouts);
 
 /// <summary>
-/// Stable identity for a panel (spec §6.2). The eFuse MAC survives reflash, replug and
+/// Stable identity for a device (spec §6.2). The eFuse MAC survives reflash, replug and
 /// hub port renumbering; nothing in the system may key off a COM port name.
 /// </summary>
 public sealed record DeviceIdentity(

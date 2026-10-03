@@ -5,19 +5,19 @@ using Crowsnest.Device.Transport;
 
 namespace Crowsnest.Device.Tests;
 
-public class PanelDeviceConnectionTests
+public class DeviceConnectionTests
 {
-    private static readonly PanelConnectionOptions FastHandshake =
+    private static readonly DeviceConnectionOptions FastHandshake =
         new() { HandshakeTimeout = TimeSpan.FromMilliseconds(500), PingInterval = TimeSpan.FromMilliseconds(50) };
 
     [Fact]
     public async Task TheHandshakePopulatesCapabilitiesAndIdentity()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
 
         Assert.Equal("crowpanel-2.1-rotary", device.Identity!.DeviceType);
@@ -26,19 +26,19 @@ public class PanelDeviceConnectionTests
         Assert.True(device.Capabilities.HasEncoder);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
     public async Task ASilentPortIsRejectedByTimeoutRatherThanHanging()
     {
-        // This is how probing tells a panel from a 3D printer on the next COM port.
+        // This is how probing tells a device from a 3D printer on the next COM port.
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
         await deviceEnd.ConnectAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(
+        await using var device = new DeviceConnection(
             hostEnd,
-            new PanelConnectionOptions { HandshakeTimeout = TimeSpan.FromMilliseconds(100) });
+            new DeviceConnectionOptions { HandshakeTimeout = TimeSpan.FromMilliseconds(100) });
 
         await Assert.ThrowsAsync<TimeoutException>(
             () => device.ConnectAsync(CancellationToken.None));
@@ -48,10 +48,10 @@ public class PanelDeviceConnectionTests
     public async Task ARenderedFrameArrivesAtTheDeviceIntact()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
         await device.RenderAsync(SelfTestFrames.HelloWorld(), CancellationToken.None);
 
@@ -62,40 +62,40 @@ public class PanelDeviceConnectionTests
         Assert.Equal(1, state.Revision);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
-    public async Task APanelThatRestartsIsAckedAndReportedConnectedAgain()
+    public async Task ADeviceThatRestartsIsAckedAndReportedConnectedAgain()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
 
         List<DeviceConnectionState> states = [];
         using IDisposable watch = device.ConnectionState.Subscribe(new Recorder(states));
 
-        // The panel crashed and came back: the port stayed open, and all the host sees is a hello.
+        // The device crashed and came back: the port stayed open, and all the host sees is a hello.
         await fake.SendHelloAsync();
 
         await Eventually(() => fake.HelloAcks == 2 && states.Count == 3);
         Assert.Equal([DeviceConnectionState.Connected, DeviceConnectionState.Handshaking, DeviceConnectionState.Connected], states);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
-    public async Task AHelloFromADifferentPanelFaultsTheLinkInsteadOfRejoining()
+    public async Task AHelloFromADifferentDeviceFaultsTheLinkInsteadOfRejoining()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
 
         await fake.SendHelloAsync("a4cb8fdc1234");
@@ -106,24 +106,24 @@ public class PanelDeviceConnectionTests
         Assert.Equal(1, fake.HelloAcks);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
-    public async Task ALinkThePanelClosesFaultsAtOnceWithTheReason()
+    public async Task ALinkTheDeviceClosesFaultsAtOnceWithTheReason()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        using var stopPanel = new CancellationTokenSource();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(stopPanel.Token);
+        using var stopFake = new CancellationTokenSource();
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(stopFake.Token);
 
         // A slow heartbeat, so only the end of the stream can explain a quick Faulted.
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake with { PingInterval = TimeSpan.FromMinutes(1) });
+        await using var device = new DeviceConnection(hostEnd, FastHandshake with { PingInterval = TimeSpan.FromMinutes(1) });
         await device.ConnectAsync(CancellationToken.None);
 
-        await stopPanel.CancelAsync();
-        await AwaitQuietly(panel);
-        await deviceEnd.DisposeAsync(); // completes the panel's side of the pipe: end of stream
+        await stopFake.CancelAsync();
+        await AwaitQuietly(fakeLoop);
+        await deviceEnd.DisposeAsync(); // completes the device's side of the pipe: end of stream
 
         await Eventually(() => device.Fault is not null);
         Assert.IsType<EndOfStreamException>(device.Fault);
@@ -133,10 +133,10 @@ public class PanelDeviceConnectionTests
     public async Task DeviceInputReachesTheHostAsACoreEvent()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
         await fake.SendEncoderAsync(-3);
 
@@ -146,17 +146,17 @@ public class PanelDeviceConnectionTests
         Assert.Equal(-3, turned.Detents);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
     public async Task GarbageOnTheLinkDoesNotBreakTheFramesEitherSideOfIt()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
 
         await fake.SendRawAsync("this is not a frame at all\n");
@@ -168,7 +168,7 @@ public class PanelDeviceConnectionTests
         Assert.Equal(7, Assert.IsType<DeviceInputEvent.EncoderTurned>(first).Detents);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
@@ -178,10 +178,10 @@ public class PanelDeviceConnectionTests
         // int.MaxValue on any machine that has been up a few minutes. The honest path
         // must survive that, which is the whole point of `ts` being 64-bit on both ends.
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd);
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
         await device.ConnectAsync(CancellationToken.None);
 
         TimeSpan elapsed = await device.MeasureRoundTripAsync(CancellationToken.None);
@@ -189,20 +189,20 @@ public class PanelDeviceConnectionTests
         Assert.True(elapsed >= TimeSpan.Zero);
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
     [Fact]
     public async Task ADeviceThatEchoesATruncatedTimestampTimesOutRatherThanHanging()
     {
-        // The original defect: the panel narrowed `ts` to 32 bits, so no pong ever matched
+        // The original defect: the device narrowed `ts` to 32 bits, so no pong ever matched
         // the key its ping was stored under and the await never completed. The link stayed
         // up and the tool printed nothing, which is the worst possible way to fail.
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
-        await using var fake = new FakePanel(deviceEnd) { SaturatePongTimestampToInt32 = true };
-        Task panel = fake.RunAsync(CancellationToken.None);
+        await using var fake = new FakeDevice(deviceEnd) { SaturatePongTimestampToInt32 = true };
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
 
-        await using var device = new PanelDeviceConnection(
+        await using var device = new DeviceConnection(
             hostEnd,
             FastHandshake with { PingTimeout = TimeSpan.FromMilliseconds(200) });
         await device.ConnectAsync(CancellationToken.None);
@@ -211,10 +211,10 @@ public class PanelDeviceConnectionTests
             () => device.MeasureRoundTripAsync(CancellationToken.None));
 
         await device.DisposeAsync();
-        await AwaitQuietly(panel);
+        await AwaitQuietly(fakeLoop);
     }
 
-    private static async Task<DeviceInputEvent> FirstInputAsync(PanelDeviceConnection device)
+    private static async Task<DeviceInputEvent> FirstInputAsync(DeviceConnection device)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await foreach (DeviceInputEvent input in device.Inputs.WithCancellation(timeout.Token))
@@ -262,7 +262,7 @@ public class PanelDeviceConnectionTests
         }
         catch (Exception e) when (e is OperationCanceledException or InvalidOperationException)
         {
-            // The loopback was torn down underneath the panel loop.
+            // The loopback was torn down underneath the fake device's loop.
         }
     }
 
@@ -270,7 +270,7 @@ public class PanelDeviceConnectionTests
     /// The device end, reduced to what these tests need. Crowsnest.DeviceSimulator has the
     /// full version; duplicating a little of it here keeps tests off a tool project.
     /// </summary>
-    private sealed class FakePanel(LoopbackTransport transport) : IAsyncDisposable
+    private sealed class FakeDevice(LoopbackTransport transport) : IAsyncDisposable
     {
         private readonly NdjsonFrameReader _reader = new(transport.Input);
         private readonly NdjsonFrameWriter _writer = new(transport.Output);
@@ -282,7 +282,7 @@ public class PanelDeviceConnectionTests
 
         public int HelloAcks => Volatile.Read(ref _helloAcks);
 
-        /// <summary>The hello the panel sends on boot, unasked, and in reply to the host's.</summary>
+        /// <summary>The hello the device sends on boot, unasked, and in reply to the host's.</summary>
         public ValueTask SendHelloAsync(string hardwareId = "a4cb8fdccc6c") =>
             _writer.WriteAsync(new DeviceHello
             {
@@ -328,7 +328,7 @@ public class PanelDeviceConnectionTests
                         break;
 
                     case HostPing ping:
-                        // Saturating here is exactly what the panel firmware did while `ts`
+                        // Saturating here is exactly what the device firmware did while `ts`
                         // was an int32_t: the double->int32 cast pinned every real host
                         // timestamp to int.MaxValue.
                         await _writer.WriteAsync(

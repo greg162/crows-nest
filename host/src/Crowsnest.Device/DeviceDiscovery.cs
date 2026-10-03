@@ -7,7 +7,7 @@ namespace Crowsnest.Device;
 public sealed record DeviceCandidate(string PortName, string Description, string HardwareId, bool MatchesKnownBoard);
 
 /// <summary>
-/// Finds panels (spec §6). SerialPort.GetPortNames() gives no VID/PID, so the hardware ID
+/// Finds devices (spec §6). SerialPort.GetPortNames() gives no VID/PID, so the hardware ID
 /// comes from a CIM query over Win32_PnPEntity.
 ///
 /// The VID/PID filter only ranks candidates — it never excludes one. A board port on other
@@ -16,7 +16,7 @@ public sealed record DeviceCandidate(string PortName, string Description, string
 /// </summary>
 public static partial class DeviceDiscovery
 {
-    /// <summary>ESP32-S3 native USB-Serial/JTAG, confirmed on the reference panel (spec §9.6 F4).</summary>
+    /// <summary>ESP32-S3 native USB-Serial/JTAG, confirmed on the reference device (spec §9.6 F4).</summary>
     public const string KnownBoardHardwareId = "VID_303A&PID_1001";
 
     [GeneratedRegex(@"\((?<port>COM\d+)\)", RegexOptions.ExplicitCapture)]

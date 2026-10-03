@@ -14,7 +14,7 @@ public sealed record PanelPage(
     IReadOnlyList<ParameterId> Fields,
     string? SwapEvent = null);
 
-/// <summary>Where the panel is in its list of pages. Next and previous wrap round.</summary>
+/// <summary>Where a device is in its list of pages. Next and previous wrap round.</summary>
 public sealed class PageNavigator
 {
     private readonly IReadOnlyList<PanelPage> _pages;
@@ -25,7 +25,7 @@ public sealed class PageNavigator
 
         if (pages.Count == 0)
         {
-            throw new ArgumentException("A panel needs at least one page.", nameof(pages));
+            throw new ArgumentException("A device needs at least one page to show.", nameof(pages));
         }
 
         if (pages.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != pages.Count)

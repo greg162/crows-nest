@@ -88,7 +88,7 @@ public sealed class SimConnectParameterGateway : ISimParameterGateway
             }
         }
 
-        // A new subscriber (a panel plugged back in) starts with no values, and SimConnect only
+        // A new subscriber (a bridge restarting) starts with no values, and SimConnect only
         // reports changes, so a cockpit that sits still would never fill it in. Ask the loop,
         // which owns the latest values, to send them all again.
         _replay = true;
