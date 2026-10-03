@@ -128,24 +128,28 @@ Three specifics behind that table:
 ## 4. .NET solution layout
 
 ```
-Crowsnest.sln
-├── src/
-│   ├── Crowsnest.Core/            net10.0              — no project references
-│   ├── Crowsnest.SimConnect/      net10.0-windows;x64  — no project references
-│   ├── Crowsnest.Sim/             net10.0-windows      — → Core, SimConnect
-│   ├── Crowsnest.Device/          net10.0-windows      — → Core
-│   ├── Crowsnest.Host/            net10.0-windows      — → Core, Sim, Device
-│   ├── Crowsnest.Tray/            net10.0-windows WPF  — → Host  (entry point)
-│   └── Crowsnest.Installer/       WiX v5
-├── firmware/
-│   └── crowsnest-display/         ESP-IDF 6.1 + LVGL 9
-├── tools/
-│   ├── Crowsnest.DevConsole/      manual SimConnect harness
-│   └── Crowsnest.DeviceSimulator/ speaks the device protocol, no hardware needed
-└── tests/
-    ├── Crowsnest.Core.Tests/
-    ├── Crowsnest.Device.Tests/
-    └── Crowsnest.Sim.Tests/
+crowsnest/
+├── global.json                       — stays at the root so dotnet finds it from anywhere
+├── host/                             — the Windows side
+│   ├── Crowsnest.slnx
+│   ├── Directory.Build.props
+│   ├── src/
+│   │   ├── Crowsnest.Core/           net10.0              — no project references
+│   │   ├── Crowsnest.SimConnect/     net10.0-windows;x64  — no project references
+│   │   ├── Crowsnest.Sim/            net10.0-windows      — → Core, SimConnect
+│   │   ├── Crowsnest.Device/         net10.0-windows      — → Core
+│   │   ├── Crowsnest.Host/           net10.0-windows      — → Core, Sim, Device
+│   │   ├── Crowsnest.Tray/           net10.0-windows WPF  — → Host  (entry point)
+│   │   └── Crowsnest.Installer/      WiX v5
+│   ├── tools/
+│   │   ├── Crowsnest.DevConsole/     manual SimConnect harness
+│   │   └── Crowsnest.DeviceSimulator/ speaks the device protocol, no hardware needed
+│   └── tests/
+│       ├── Crowsnest.Core.Tests/
+│       ├── Crowsnest.Device.Tests/
+│       └── Crowsnest.Sim.Tests/
+└── firmware/
+    └── crowsnest-display/            ESP-IDF 6.1 + LVGL 9
 ```
 
 **Dependency rule.** `Crowsnest.Core` references nothing but the BCL. Adapters (`Sim`, `Device`) reference `Core` and never each other. `Host` composes. This is Ports and Adapters, and it is what makes `Crowsnest.SimConnect` reusable in another project entirely.
@@ -157,7 +161,7 @@ Crowsnest.sln
 The layering above is a *deployment* structure. Within `Core`, the organising principle is the opposite: **vertical slices by panel**, so that everything about COM lives in one place rather than being smeared across a domain folder, a config file and a page catalogue.
 
 ```
-src/Crowsnest.Core/
+host/src/Crowsnest.Core/
 ├── Domain/                        — shared, panel-agnostic
 │   ├── ParameterId.cs
 │   ├── ComFrequency.cs
@@ -185,7 +189,7 @@ src/Crowsnest.Core/
     └── Transponder/               phase 6
 ```
 
-Tests mirror it exactly — `tests/Crowsnest.Core.Tests/Panels/Com/` — so a panel and its tests are one `cd` apart.
+Tests mirror it exactly — `host/tests/Crowsnest.Core.Tests/Panels/Com/` — so a panel and its tests are one `cd` apart.
 
 **Folders, not projects.** Each panel is a module in the design sense (§5.8) without being a separate assembly. See §5.8 for the promotion criteria; the short version is that a panel earns its own `.csproj` when it needs its own NuGet dependencies or must load at runtime, and not before.
 
@@ -1008,7 +1012,7 @@ Two gotchas worth writing down. COM 1 uses the unnumbered `COM_RADIO_SET_HZ`; on
 - **Before readiness** values are held (only the latest per id) and writes and invokes are dropped; at readiness the held values are published at once. A 0 Hz value is published as `Available: false`.
 - **Read-back latency is logged** for every write that is confirmed, as §5.3 promised.
 - **Only `WriteMode.KeyEvent` is implemented**; the others throw `NotSupportedException`, which the coordinator reports.
-- `tools/Crowsnest.DeviceSimulator -- --msfs` runs the demo against MSFS; `Crowsnest.Host`'s hosted services wait for real hardware.
+- `host/tools/Crowsnest.DeviceSimulator -- --msfs` runs the demo against MSFS; `Crowsnest.Host`'s hosted services wait for real hardware.
 
 Some autopilot parameters are also directly writable via `SimConnect_SetDataOnSimObject`, which is why `WriteMode.SimVarWrite` exists. Prefer key events where one is available — they trigger the aircraft's own systems logic, whereas a direct SimVar write can bypass it and desync the aircraft's displays.
 
@@ -1041,7 +1045,7 @@ public sealed class StartupRegistration;                // HKCU\...\Run
 public sealed class SingleInstanceGuard;                // named mutex + pipe activation
 ```
 
-**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `DefaultParameters.Load()`, the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.2) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
+**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `DefaultParameters.Load()`, the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.2) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `host/tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
 
 Settings live in `%LOCALAPPDATA%\Crowsnest\settings.json`; logs roll into `%LOCALAPPDATA%\Crowsnest\logs\` with seven-day retention via Serilog, plus an in-memory ring buffer sink so the diagnostics window can tail without touching disk.
 
@@ -1257,8 +1261,8 @@ The manager validates the extracted tree against `.component_hash` and, on a mat
 | **Every `IPanelModule`** | A shared `PanelModuleContract` theory runs against `PanelCatalog.All`: ids unique, `Order` unique, every page field resolves to a registered parameter, every referenced formatter and grid key exists, every declared `SwapEvent` is non-empty on paired layouts. **Adding a panel inherits this suite automatically** |
 | Architecture | NetArchTest or similar: `Domain/` and `Application/` must not reference `Panels/`; no `Panels/X` may reference `Panels/Y` |
 | Protocol codec | Round-trip tests plus a fuzz test against truncated frames, split frames, garbage bytes, and unknown message types |
-| `Crowsnest.SimConnect` | Not unit-testable. `tools/Crowsnest.DevConsole` is the manual harness; keep it in the repo |
-| Firmware | `tools/Crowsnest.DeviceSimulator` speaks the device protocol from a desktop app, so the PC side is fully developable before firmware exists — and the real device can be swapped in to isolate which side broke. The firmware's own test strategy is §11.1 |
+| `Crowsnest.SimConnect` | Not unit-testable. `host/tools/Crowsnest.DevConsole` is the manual harness; keep it in the repo |
+| Firmware | `host/tools/Crowsnest.DeviceSimulator` speaks the device protocol from a desktop app, so the PC side is fully developable before firmware exists — and the real device can be swapped in to isolate which side broke. The firmware's own test strategy is §11.1 |
 
 
 ### 11.1 Firmware testing
@@ -1313,7 +1317,7 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 | **6.5 — Multi-panel** | `IPanelDeviceManager`, role assignment UI, OTA update flow | Three panels on one hub, each assigned different pages, sharing tuning state; all three update from one tray action |
 | **7 — Portability** | Second board port + Wi-Fi transport | A board Crowsnest was not designed against runs the unmodified `crowsnest_ui` |
 
-**Phase 1 demo, 2026-09-27.** `tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `PanelDeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedPanel` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
+**Phase 1 demo, 2026-09-27.** `host/tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `PanelDeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedPanel` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
 
 **First run with the real panel, 2026-09-27** (`Crowsnest.DevConsole` → `Crowsnest.Host`, CrowPanel fw 0.1.0 on COM4, MSFS C172). The whole chain worked first time — knob → host → SimConnect → cockpit radio, and the cockpit knob back to the panel — with four findings, all fixed in the firmware and **not yet flashed or verified**:
 

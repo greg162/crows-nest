@@ -30,8 +30,8 @@ generates hundreds of megabytes of build output that has no business syncing.
 ## Build
 
 ```
-dotnet build Crowsnest.slnx
-dotnet test  Crowsnest.slnx
+dotnet build host/Crowsnest.slnx
+dotnet test  host/Crowsnest.slnx
 ```
 
 .NET 10 emits the XML solution format (`.slnx`) rather than `.sln`.
@@ -39,21 +39,22 @@ dotnet test  Crowsnest.slnx
 ## Layout
 
 ```
-src/
-  Crowsnest.Core/          net10.0          BCL only — no project references
-  Crowsnest.SimConnect/    net10.0-windows  no project references (NuGet candidate)
-  Crowsnest.Sim/           net10.0-windows  -> Core, SimConnect
-  Crowsnest.Device/        net10.0-windows  -> Core
-  Crowsnest.Host/          net10.0-windows  -> Core, Sim, Device
-tools/
-  Crowsnest.DevConsole/         manual SimConnect harness (spike 0a)
-  Crowsnest.DeviceSimulator/    speaks the device protocol, no hardware needed
-  Crowsnest.LinkSpike/          THROWAWAY — USB CDC handshake + latency (spike 0c)
-tests/
-  Crowsnest.Core.Tests/    mirrors the Core folder structure exactly
-  Crowsnest.Device.Tests/
+host/                      the Windows side: Crowsnest.slnx, Directory.Build.props
+  src/
+    Crowsnest.Core/          net10.0          BCL only — no project references
+    Crowsnest.SimConnect/    net10.0-windows  no project references (NuGet candidate)
+    Crowsnest.Sim/           net10.0-windows  -> Core, SimConnect
+    Crowsnest.Device/        net10.0-windows  -> Core
+    Crowsnest.Host/          net10.0-windows  -> Core, Sim, Device
+  tools/
+    Crowsnest.DevConsole/         manual SimConnect harness (spike 0a)
+    Crowsnest.DeviceSimulator/    speaks the device protocol, no hardware needed
+    Crowsnest.LinkSpike/          THROWAWAY — USB CDC handshake + latency (spike 0c)
+  tests/
+    Crowsnest.Core.Tests/    mirrors the Core folder structure exactly
+    Crowsnest.Device.Tests/
 firmware/
-  crowsnest-display/       ESP-IDF 6.1 + LVGL 9 (not yet created)
+  crowsnest-display/       ESP-IDF 6.1 + LVGL 9
 ```
 
 **The dependency rule.** `Core` references nothing but the BCL. Adapters (`Sim`,
