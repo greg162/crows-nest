@@ -89,6 +89,27 @@ public class PanelDeviceConnectionTests
     }
 
     [Fact]
+    public async Task AHelloFromADifferentPanelFaultsTheLinkInsteadOfRejoining()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new FakePanel(deviceEnd);
+        Task panel = fake.RunAsync(CancellationToken.None);
+
+        await using var device = new PanelDeviceConnection(hostEnd, FastHandshake);
+        await device.ConnectAsync(CancellationToken.None);
+
+        await fake.SendHelloAsync("a4cb8fdc1234");
+
+        await Eventually(() => device.Fault is not null);
+        Assert.IsType<InvalidDataException>(device.Fault);
+        Assert.Equal("a4cb8fdccc6c", device.Identity!.HardwareId);
+        Assert.Equal(1, fake.HelloAcks);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(panel);
+    }
+
+    [Fact]
     public async Task ALinkThePanelClosesFaultsAtOnceWithTheReason()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
@@ -262,12 +283,12 @@ public class PanelDeviceConnectionTests
         public int HelloAcks => Volatile.Read(ref _helloAcks);
 
         /// <summary>The hello the panel sends on boot, unasked, and in reply to the host's.</summary>
-        public ValueTask SendHelloAsync() =>
+        public ValueTask SendHelloAsync(string hardwareId = "a4cb8fdccc6c") =>
             _writer.WriteAsync(new DeviceHello
             {
                 DeviceType = "crowpanel-2.1-rotary",
                 FirmwareVersion = "0.1.0-test",
-                HardwareId = "a4cb8fdccc6c",
+                HardwareId = hardwareId,
                 Capabilities = new WireCapabilities
                 {
                     Shape = "round",

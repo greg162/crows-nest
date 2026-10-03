@@ -855,6 +855,8 @@ Each device keeps its own `PageNavigator` — panels navigate independently even
 
 **Sim subscription is unaffected.** One gateway, one data definition covering every registered parameter, regardless of how many panels are plugged in.
 
+**First cut implemented and verified 2026-10-03** (two CrowPanels, fw 0.3.4, COM4 + COM5). `PanelEngine` keeps the shared `TuningSession`s and a per-panel view (page navigator, revision, ack, last-turn time), keyed by hardware id; after each event it renders a frame only for the panels whose screen changed. `PanelCoordinator.RunAsync` runs for the life of the bridge, and each connected panel is served by `RunPanelAsync(hardwareId, device, ct)`, which ends (throwing) only for that panel when its link faults; a second panel claiming a hardware id already connected is refused. `BridgeHostedService` scans every 2 s, skipping the ports it already holds, and reports a refused port once rather than every scan. A `hello` carrying a different hardware id on an open link faults it instead of rejoining. Verified on hardware: turning one panel's knob updates the other at once, the panels page independently, and a pulled cable drops only that panel, which rejoins when plugged back in. Not yet: assignments (every panel gets every page), the "unassigned" screen, per-panel `hello_ack` settings, and `IPanelDeviceManager` as a type of its own (the scan lives in `BridgeHostedService`).
+
 ### 6.3 Firmware updates over the link
 
 Detecting panels and offering to update them is the right call, and it is worth more here than with one device — nobody wants to flash five boards by hand. But do it **over the existing protocol**, not by shelling out to `esptool`.

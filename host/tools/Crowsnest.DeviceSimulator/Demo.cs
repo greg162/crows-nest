@@ -200,9 +200,11 @@ internal sealed class Demo : IAsyncDisposable
         }
 
         PanelCoordinator coordinator = new(
-            demo.Setup, demo._sim, demo._device, DefaultInputActionMap.Instance,
+            demo.Setup, demo._sim, DefaultInputActionMap.Instance,
             TuningOptions.Default, TimeProvider.System, e => demo.Note($"effect failed: {e.Message}"));
-        demo._hostLoop = coordinator.RunAsync(demo._stop.Token);
+        demo._hostLoop = Task.WhenAll(
+            coordinator.RunAsync(demo._stop.Token),
+            coordinator.RunPanelAsync(demo._device.Identity!.HardwareId, demo._device, demo._stop.Token));
 
         return demo;
     }

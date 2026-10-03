@@ -130,8 +130,17 @@ public sealed class PanelDeviceConnection : IPanelDevice
     /// </summary>
     private async Task RejoinAsync(DeviceHello hello, CancellationToken ct)
     {
+        DeviceIdentity identity = ProtocolCodec.ToIdentity(hello);
+        if (Identity is { } known && identity.HardwareId != known.HardwareId)
+        {
+            // Panels are keyed on their hardware id (spec §6.2), so a different board on the same
+            // link is not a restart: fail, and let discovery meet it as the new panel it is.
+            Fail(new InvalidDataException($"Panel {known.HardwareId} was replaced by {identity.HardwareId} on the same link."));
+            return;
+        }
+
         Capabilities = ProtocolCodec.ToCapabilities(hello);
-        Identity = ProtocolCodec.ToIdentity(hello);
+        Identity = identity;
 
         _state.OnNext(DeviceConnectionState.Handshaking);
         await SendHelloAckAsync(ct);

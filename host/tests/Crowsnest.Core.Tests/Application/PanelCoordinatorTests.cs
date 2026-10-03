@@ -17,28 +17,38 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     private static readonly ParameterId ComStandby = new("com1.standby");
     private static readonly ParameterId ComActive = new("com1.active");
 
+    private const string PanelA = "a4cb8fdccc6c";
+    private const string PanelB = "a4cb8fdc1234";
+
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero));
     private readonly FakeSimGateway _sim = new();
     private readonly FakePanelDevice _device = new();
+    private readonly FakePanelDevice _other = new();
     private readonly List<Exception> _failures = [];
     private readonly CancellationTokenSource _stop = new();
+    private PanelCoordinator? _coordinator;
     private Task? _run;
+    private Task? _panel;
 
     private void Start()
     {
-        PanelCoordinator coordinator = new(
-            DefaultParameters.Load(), _sim, _device, DefaultInputActionMap.Instance,
+        _coordinator = new(
+            DefaultParameters.Load(), _sim, DefaultInputActionMap.Instance,
             TuningOptions.Default, _time, e => { lock (_failures) { _failures.Add(e); } });
 
-        _run = coordinator.RunAsync(_stop.Token);
+        _run = _coordinator.RunAsync(_stop.Token);
+        _panel = _coordinator.RunPanelAsync(PanelA, _device, _stop.Token);
     }
 
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();
-        if (_run is not null)
+        foreach (Task? task in new[] { _run, _panel })
         {
-            await _run.WaitAsync(TimeSpan.FromSeconds(5));
+            if (task is not null)
+            {
+                await task.ContinueWith(_ => { }, TaskScheduler.Default).WaitAsync(TimeSpan.FromSeconds(5));
+            }
         }
 
         _stop.Dispose();
@@ -153,26 +163,86 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task AFailedInputStreamFaultsTheRun()
+    public async Task AFailedInputStreamEndsOnlyThatPanel()
     {
         await StartTuned();
+        Task other = _coordinator!.RunPanelAsync(PanelB, _other, _stop.Token);
+        await Eventually(() => _other.Latest is not null, "the second panel's first frame");
 
         _device.Fail(new IOException("cable pulled"));
 
-        IOException e = await Assert.ThrowsAsync<IOException>(() => _run!.WaitAsync(TimeSpan.FromSeconds(5)));
+        IOException e = await Assert.ThrowsAsync<IOException>(() => _panel!.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal("cable pulled", e.Message);
-        _run = null;
+        _panel = null;
+
+        _sim.Push(ComActive, 124_850);
+        await Eventually(() => _other.Latest?.Fields[1].Text == "124.850", "the other panel to carry on");
+        Assert.False(_run!.IsCompleted);
+        Assert.False(other.IsCompleted);
     }
 
     [Fact]
-    public async Task AFaultedDeviceEndsTheRun()
+    public async Task AFaultedDeviceEndsOnlyThatPanelAndGetsNoMoreFrames()
     {
         await StartTuned();
 
         _device.State.OnNext(DeviceConnectionState.Faulted);
 
-        await Assert.ThrowsAsync<IOException>(() => _run!.WaitAsync(TimeSpan.FromSeconds(5)));
-        _run = null;
+        await Assert.ThrowsAsync<IOException>(() => _panel!.WaitAsync(TimeSpan.FromSeconds(5)));
+        _panel = null;
+        int frames = _device.Frames.Count;
+
+        _sim.Push(ComActive, 124_850);
+        _sim.State.OnNext(SimConnectionState.Disconnected);
+        await Task.Delay(100);
+
+        Assert.Equal(frames, _device.Frames.Count);
+        Assert.False(_run!.IsCompleted);
+    }
+
+    [Fact]
+    public async Task TwoPanelsShareTuningButNavigateApart()
+    {
+        await StartTuned();
+        Task other = _coordinator!.RunPanelAsync(PanelB, _other, _stop.Token);
+        await Eventually(() => _other.Latest?.Fields[0].Text == "121.500", "the second panel to show COM 1");
+
+        _device.Turn(1, _time.GetUtcNow());
+        await Eventually(() => _other.Latest?.Fields[0].Text == "122.500", "the turn to show on the other panel");
+
+        _other.Swipe(SwipeDir.Left, _time.GetUtcNow());
+        await Eventually(() => _other.Latest?.Page.Id == "com2", "the other panel to change page");
+        Assert.Equal("com1", _device.Latest!.Page.Id);
+        Assert.False(other.IsCompleted);
+    }
+
+    [Fact]
+    public async Task ASecondPanelWithTheSameIdIsRefused()
+    {
+        await StartTuned();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _coordinator!.RunPanelAsync(PanelA, _other, _stop.Token).WaitAsync(TimeSpan.FromSeconds(5)));
+
+        // The real one is untouched.
+        _sim.Push(ComActive, 124_850);
+        await Eventually(() => _device.Latest?.Fields[1].Text == "124.850", "the first panel to carry on");
+        Assert.Empty(_other.Frames);
+    }
+
+    [Fact]
+    public async Task APanelReturnsWhenTheCoordinatorStops()
+    {
+        using CancellationTokenSource coordinatorOnly = new();
+        _coordinator = new(DefaultParameters.Load(), _sim, DefaultInputActionMap.Instance, TuningOptions.Default, _time);
+        _run = _coordinator.RunAsync(coordinatorOnly.Token);
+        _panel = _coordinator.RunPanelAsync(PanelA, _device, _stop.Token);
+        await Eventually(() => _device.Latest is not null, "the first frame");
+
+        await coordinatorOnly.CancelAsync();
+
+        await _panel.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(_panel.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -183,6 +253,8 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
         await _stop.CancelAsync();
 
         await _run!.WaitAsync(TimeSpan.FromSeconds(5));
+        await _panel!.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(_run.IsCompletedSuccessfully);
+        Assert.True(_panel.IsCompletedSuccessfully);
     }
 }

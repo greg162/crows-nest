@@ -18,6 +18,8 @@ public class ComSpacingBehaviourTests
     private static readonly ParameterId Active = new("com1.active");
     private static readonly ParameterId Spacing = new("com1.spacing");
 
+    private const string P = "panel";
+
     private long _sequence;
 
     /// <summary>The shipped panel with the sim reporting 121.500 / 118.000, cursor on kHz.</summary>
@@ -25,14 +27,15 @@ public class ComSpacingBehaviourTests
     {
         PanelSetup setup = DefaultParameters.Load();
         PanelEngine engine = new(setup.Registry, setup.Pages, DefaultInputActionMap.Instance, TuningOptions.Default, setup.Behaviours);
+        engine.Join(P);
         engine.OnSnapshot(new ParameterSnapshot(Standby, 121_500));
         engine.OnSnapshot(new ParameterSnapshot(Active, 118_000));
-        engine.OnInput(new DeviceInputEvent.KnobPressed(++_sequence, T0, PressKind.Short), T0);
+        engine.OnInput(P, new DeviceInputEvent.KnobPressed(++_sequence, T0, PressKind.Short), T0);
         return engine;
     }
 
     private PanelEffects Turn(PanelEngine engine, int detents) =>
-        engine.OnInput(new DeviceInputEvent.EncoderTurned(++_sequence, T0, detents), T0);
+        engine.OnInput(P, new DeviceInputEvent.EncoderTurned(++_sequence, T0, detents), T0);
 
     private static ComChannelGrid GridOf(PanelEngine engine, ParameterId id) => (ComChannelGrid)engine.Session(id).Parameter.Grid;
 
@@ -41,7 +44,7 @@ public class ComSpacingBehaviourTests
     {
         PanelEngine engine = Tuned();
 
-        Assert.Equal("121.525", Turn(engine, 1).Frame!.Fields[0].Text);
+        Assert.Equal("121.525", Turn(engine, 1).FrameFor(P)!.Fields[0].Text);
     }
 
     [Fact]
@@ -51,7 +54,7 @@ public class ComSpacingBehaviourTests
 
         engine.OnSnapshot(new ParameterSnapshot(Spacing, 1));
 
-        Assert.Equal("121.505", Turn(engine, 1).Frame!.Fields[0].Text);
+        Assert.Equal("121.505", Turn(engine, 1).FrameFor(P)!.Fields[0].Text);
         Assert.Equal(ChannelSpacing.EightPointThreeThree, GridOf(engine, Active).Spacing); // both radios follow
     }
 
@@ -64,7 +67,7 @@ public class ComSpacingBehaviourTests
         engine.OnSnapshot(new ParameterSnapshot(Spacing, 0));
 
         Assert.Equal(ChannelSpacing.TwentyFiveKhz, GridOf(engine, Standby).Spacing);
-        Assert.Equal("121.525", Turn(engine, 1).Frame!.Fields[0].Text);
+        Assert.Equal("121.525", Turn(engine, 1).FrameFor(P)!.Fields[0].Text);
     }
 
     [Fact]
@@ -74,7 +77,7 @@ public class ComSpacingBehaviourTests
         engine.OnSnapshot(new ParameterSnapshot(Spacing, 1));
         Turn(engine, 1); // 121.505: an 8.33-only name
 
-        DisplayFrame frame = engine.OnSnapshot(new ParameterSnapshot(Spacing, 0)).Frame!;
+        DisplayFrame frame = engine.OnSnapshot(new ParameterSnapshot(Spacing, 0)).FrameFor(P)!;
 
         Assert.Equal("121.500", frame.Fields[0].Text);
         Assert.False(frame.Fields[0].Pending);
@@ -89,7 +92,7 @@ public class ComSpacingBehaviourTests
         engine.OnSnapshot(new ParameterSnapshot(Standby, 121_505));
 
         engine.OnSnapshot(new ParameterSnapshot(Spacing, 0));
-        DisplayFrame snapped = engine.OnSnapshot(new ParameterSnapshot(Standby, 121_500)).Frame!;
+        DisplayFrame snapped = engine.OnSnapshot(new ParameterSnapshot(Standby, 121_500)).FrameFor(P)!;
 
         Assert.Equal("121.500", snapped.Fields[0].Text);
     }

@@ -85,6 +85,9 @@ internal sealed class FakePanelDevice : IPanelDevice
     public void Tap(DateTimeOffset at) =>
         _inputs.Writer.TryWrite(new DeviceInputEvent.ScreenTapped(++_sequence, at, 240, 240));
 
+    public void Swipe(SwipeDir dir, DateTimeOffset at) =>
+        _inputs.Writer.TryWrite(new DeviceInputEvent.SwipeDetected(++_sequence, at, dir));
+
     /// <summary>The input stream fails, as a dropped serial link would make it.</summary>
     public void Fail(Exception error) => _inputs.Writer.TryComplete(error);
 
