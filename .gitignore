@@ -14,9 +14,6 @@ TestResults/
 *.coverage
 *.nupkg
 
-# ---- Vendored native SimConnect (see spec s13, "vendor into the repo") ----
-# Deliberately NOT ignored: lib/simconnect/**. Tracked on purpose.
-
 # ---- ESP-IDF firmware ----
 # Build output: hundreds of MB, fully regenerable.
 firmware/**/build/
