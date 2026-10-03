@@ -32,6 +32,18 @@ documented prerequisite, not a committed one. On the reference machine:
 . C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1
 ```
 
+If that fails with "running scripts is disabled on this system", you are in Windows
+PowerShell 5.1, which blocks scripts by default (PowerShell 7 does not). Allow them for this
+window only, then run the line above again:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+```
+
+`-Scope Process` lasts until the window closes and changes nothing machine-wide. To stop
+needing it, use PowerShell 7 (`pwsh`), or run
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+
 EIM's activation profile lives under `IDF_TOOLS_PATH`, not beside the IDF checkout, and
 `C:\esp\v6.1\esp-idf\export.ps1` will **not** work on its own — it looks for a Python
 environment at the stock `~/.espressif` path that EIM does not create.
