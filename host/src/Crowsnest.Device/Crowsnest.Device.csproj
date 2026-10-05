@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <!-- SerialPort: the USB CDC transport (spec §6). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
     <!-- CIM/WMI over Win32_PnPEntity: SerialPort.GetPortNames() gives no VID/PID (spec §6). -->
     <PackageReference Include="System.Management" Version="10.0.0" />

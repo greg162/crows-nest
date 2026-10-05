@@ -2,6 +2,7 @@ using Crowsnest.Core.Application;
 using Crowsnest.Core.Application.Panels;
 using Crowsnest.Core.Application.Ports;
 using Crowsnest.Core.Panels;
+using Crowsnest.Device;
 using Crowsnest.Sim;
 using Crowsnest.SimConnect;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,17 @@ public static class HostBuilderExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(_ => PanelCatalog.Load());
         services.AddSingleton(sp => new SettingsStore(sp.GetRequiredService<ILogger<SettingsStore>>()));
+        services.AddSingleton(sp =>
+        {
+            SettingsStore settings = sp.GetRequiredService<SettingsStore>();
+            return new DeviceManager(
+                new DeviceManagerOptions
+                {
+                    Connection = new DeviceConnectionOptions { BrightnessFor = identity => settings.Current.Find(identity.HardwareId)?.Brightness },
+                    Time = sp.GetRequiredService<TimeProvider>(),
+                },
+                sp.GetRequiredService<ILogger<DeviceManager>>());
+        });
         services.AddSingleton<IInputActionMap>(DefaultInputActionMap.Instance);
 
         services.AddSingleton(sp => new SimConnectParameterGateway(

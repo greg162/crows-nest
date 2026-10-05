@@ -133,16 +133,20 @@ public sealed partial class SettingsStore : IDisposable
         }
 
         LogLoaded(_log, FilePath, settings.Devices.Count);
-        if (notify)
+        if (notify && Changed is { } changed)
         {
-            try
+            // One at a time, so a handler that throws cannot keep the change from the rest; and
+            // caught, since this is the timer's thread, where an exception would end the process.
+            foreach (Action<BridgeSettings> handler in changed.GetInvocationList().Cast<Action<BridgeSettings>>())
             {
-                Changed?.Invoke(settings);
-            }
-            catch (Exception e)
-            {
-                // On the timer's thread, where an exception would end the process.
-                LogHandlerFailed(_log, e);
+                try
+                {
+                    handler(settings);
+                }
+                catch (Exception e)
+                {
+                    LogHandlerFailed(_log, e);
+                }
             }
         }
     }

@@ -9,6 +9,7 @@ using Crowsnest.Core.Panels;
 using Crowsnest.Core.Panels.Com;
 using Crowsnest.Device;
 using Crowsnest.Device.Protocol;
+using Crowsnest.Device.Simulation;
 using Crowsnest.Device.Transport;
 using Crowsnest.Sim;
 using Crowsnest.SimConnect;

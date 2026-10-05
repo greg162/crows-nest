@@ -9,6 +9,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Crowsnest.Core.Tests/Crowsnest.Core.Tests.csproj" />
     <Project Path="tests/Crowsnest.Device.Tests/Crowsnest.Device.Tests.csproj" />
+    <Project Path="tests/Crowsnest.Host.Tests/Crowsnest.Host.Tests.csproj" />
     <Project Path="tests/Crowsnest.Sim.Tests/Crowsnest.Sim.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">

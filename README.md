@@ -53,6 +53,7 @@ host/                      the Windows side: Crowsnest.slnx, Directory.Build.pro
     Crowsnest.Core.Tests/    mirrors the Core folder structure exactly
     Crowsnest.Device.Tests/
     Crowsnest.Sim.Tests/
+    Crowsnest.Host.Tests/    settings file, and the bridge end to end on simulated USB
 firmware/
   crowsnest-display/       ESP-IDF 6.1 + LVGL 9
 ```

@@ -1,41 +1,33 @@
-using System.Collections.Concurrent;
 using Crowsnest.Core.Application;
 using Crowsnest.Core.Application.Panels;
 using Crowsnest.Core.Application.Ports;
 using Crowsnest.Core.Application.Settings;
 using Crowsnest.Core.Domain.Tuning;
 using Crowsnest.Device;
-using Crowsnest.Device.Transport;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Crowsnest.Host;
 
 /// <summary>
-/// Runs the coordinator between the sim and every device on USB (spec §6.2, §8). One coordinator
-/// lives as long as the bridge, so devices share tuning state and a device that drops out and comes
-/// back finds the sessions as it left them. Every 2 s the ports we do not already hold are
-/// probed; each device found runs until its link fails, is disposed, and is found again by a
-/// later scan.
+/// Runs the coordinator between the sim and the devices <see cref="DeviceManager"/> finds
+/// (spec §6.2, §8). One coordinator lives as long as the bridge, so devices share tuning state
+/// and a device that drops out and comes back finds the sessions as it left them.
 ///
 /// What each device shows, and how bright it is, comes from <see cref="SettingsStore"/> (§6.2).
 /// When the file changes, connected devices are reassigned and sent their brightness again.
-///
-/// The spec's separate <c>DeviceHostedService</c> is still folded in here; the scan below is the
-/// seed of <c>IDeviceManager</c>.
 /// </summary>
 public sealed partial class BridgeHostedService(
     PanelSetup setup,
     SettingsStore settings,
+    DeviceManager devices,
     ISimParameterGateway sim,
     IInputActionMap actions,
     TimeProvider time,
     ILogger<BridgeHostedService> log) : BackgroundService
 {
-    private static readonly TimeSpan ScanInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RestartDelay = TimeSpan.FromSeconds(2);
 
-    // Devices being served, by hardware id, so new settings reach them.
-    private readonly ConcurrentDictionary<string, DeviceConnection> _live = new(StringComparer.Ordinal);
     private volatile PanelCoordinator? _coordinator;
 
     private string AvailablePanels => string.Join(", ", setup.Panels.Select(p => p.PanelId));
@@ -61,7 +53,7 @@ public sealed partial class BridgeHostedService(
             _coordinator = coordinator;
             using CancellationTokenSource runStop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             Task run = coordinator.RunAsync(runStop.Token);
-            Task scan = ScanAsync(coordinator, runStop.Token);
+            Task serving = devices.RunAsync((device, ct) => ServeAsync(coordinator, device, ct), runStop.Token);
 
             try
             {
@@ -74,119 +66,15 @@ public sealed partial class BridgeHostedService(
             }
 
             await runStop.CancelAsync().ConfigureAwait(false);
-            await scan.ConfigureAwait(false);
-            await DelayAsync(ScanInterval, stoppingToken).ConfigureAwait(false);
+            await serving.ConfigureAwait(false);
+            await DelayAsync(RestartDelay, stoppingToken).ConfigureAwait(false);
         }
     }
 
-    /// <summary>Finds devices and serves each one until <paramref name="ct"/> is cancelled, then waits for them all to close.</summary>
-    private async Task ScanAsync(PanelCoordinator coordinator, CancellationToken ct)
+    private Task ServeAsync(PanelCoordinator coordinator, ConnectedDevice device, CancellationToken ct)
     {
-        // Ports we hold, so a scan never reopens our own device ("Access is denied"). Only this
-        // loop touches it. The key is a port because that is what probing needs; the device's
-        // identity is its hardware id, and the coordinator keys on that (spec §6.2).
-        Dictionary<string, Task> held = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> refused = new(StringComparer.OrdinalIgnoreCase);
-        bool announcedSearching = false;
-
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                foreach (string port in held.Where(p => p.Value.IsCompleted).Select(p => p.Key).ToList())
-                {
-                    held.Remove(port);
-                }
-
-                IReadOnlyList<DeviceCandidate> candidates = [.. DeviceDiscovery.Enumerate()];
-                refused.IntersectWith(candidates.Select(c => c.PortName)); // unplugged: complain afresh next time
-
-                foreach (DeviceCandidate candidate in candidates.Where(c => !held.ContainsKey(c.PortName)))
-                {
-                    if (await ProbeAsync(candidate.PortName, refused, ct).ConfigureAwait(false) is { } device)
-                    {
-                        refused.Remove(candidate.PortName);
-                        held[candidate.PortName] = ServeAsync(coordinator, candidate.PortName, device, ct);
-                    }
-                }
-
-                if (held.Count == 0 && !announcedSearching)
-                {
-                    LogSearching(log, string.Join(", ", DeviceDiscovery.KnownBoardHardwareIds));
-                }
-
-                announcedSearching = held.Count == 0;
-                await DelayAsync(ScanInterval, ct).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            await Task.WhenAll(held.Values).ConfigureAwait(false);
-        }
-    }
-
-    /// <summary>Opens a port and completes the handshake, or returns null.</summary>
-    private async Task<DeviceConnection?> ProbeAsync(string port, HashSet<string> refused, CancellationToken ct)
-    {
-        DeviceConnection device = new(
-            new SerialPortTransport(port),
-            new DeviceConnectionOptions { BrightnessFor = identity => settings.Current.Find(identity.HardwareId)?.Brightness });
-        try
-        {
-            await device.ConnectAsync(ct).ConfigureAwait(false);
-            return device;
-        }
-        catch (Exception e) when (!ct.IsCancellationRequested)
-        {
-            // Busy ("Access is denied": another program holds the port) or not a Crowsnest device. Said once
-            // per port, since the scan asks again every 2 s.
-            if (refused.Add(port))
-            {
-                LogCandidateRejected(log, port, e.Message);
-            }
-
-            await device.DisposeAsync().ConfigureAwait(false);
-            return null;
-        }
-        catch
-        {
-            // Shutting down mid-probe: still close the port.
-            await device.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
-    }
-
-    /// <summary>Serves one device until its link fails or the bridge stops, then closes it. Never throws.</summary>
-    private async Task ServeAsync(PanelCoordinator coordinator, string port, DeviceConnection device, CancellationToken ct)
-    {
-        string id = device.Identity!.HardwareId;
-        try
-        {
-            await using (device.ConfigureAwait(false))
-            {
-                LogConnected(log, device.Identity.DeviceType, device.Identity.FirmwareVersion, id, port);
-                DescribeAssignment(id, settings.Current);
-                device.LogReceived = line => LogFirmware(log, FirmwareLevel(line.Level), id, line.Level, line.Message);
-
-                _live[id] = device;
-                await coordinator.RunDeviceAsync(id, device, ct).ConfigureAwait(false);
-            }
-        }
-        catch (Exception e) when (!ct.IsCancellationRequested)
-        {
-            // The run failing and the teardown of a pulled cable failing both land here. The
-            // filter is on shutdown, not on the exception's type: Windows can report a pulled
-            // cable as a cancelled read. The link's own fault says what really happened.
-            LogDeviceLost(log, id, device.Fault ?? e);
-        }
-        catch (Exception)
-        {
-            // Shutting down; the close failing does not matter.
-        }
-        finally
-        {
-            _live.TryRemove(new KeyValuePair<string, DeviceConnection>(id, device));
-        }
+        DescribeAssignment(device.Identity.HardwareId, settings.Current);
+        return coordinator.RunDeviceAsync(device.Identity.HardwareId, device.Connection, ct);
     }
 
     /// <summary>What a device shows: its panels' pages, or nothing (the unassigned screen). Called on the coordinator's loop.</summary>
@@ -199,23 +87,23 @@ public sealed partial class BridgeHostedService(
         CheckPanelNames(changed);
         _coordinator?.Reassign();
 
-        foreach ((string id, DeviceConnection device) in _live)
+        foreach (ConnectedDevice device in devices.Connected)
         {
-            DescribeAssignment(id, changed);
-            _ = RefreshAsync(id, device);
+            DescribeAssignment(device.Identity.HardwareId, changed);
+            _ = RefreshAsync(device);
         }
     }
 
-    private async Task RefreshAsync(string id, DeviceConnection device)
+    private async Task RefreshAsync(ConnectedDevice device)
     {
         try
         {
-            await device.RefreshConfigAsync(CancellationToken.None).ConfigureAwait(false);
+            await device.Connection.RefreshConfigAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception e)
         {
             // Gone, or going: it gets its config again when it is found.
-            LogRefreshFailed(log, id, e.Message);
+            LogRefreshFailed(log, device.Identity.HardwareId, e.Message);
         }
     }
 
@@ -256,23 +144,6 @@ public sealed partial class BridgeHostedService(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Looking for devices ({HardwareId}) on USB")]
-    private static partial void LogSearching(ILogger logger, string hardwareId);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Device connected: {DeviceType} {Firmware}, id {HardwareId}, on {Port}")]
-    private static partial void LogConnected(ILogger logger, string deviceType, string firmware, string hardwareId, string port);
-
-    /// <summary>The device's own warnings are worth seeing; its chatter is not.</summary>
-    private static LogLevel FirmwareLevel(string level) => level switch
-    {
-        "error" => LogLevel.Error,
-        "warn" => LogLevel.Warning,
-        _ => LogLevel.Debug,
-    };
-
-    [LoggerMessage(Message = "Device {HardwareId} firmware [{Level}] {Message}")]
-    private static partial void LogFirmware(ILogger logger, LogLevel logLevel, string hardwareId, string level, string message);
-
     [LoggerMessage(Level = LogLevel.Information, Message = "Device {HardwareId} ({Name}) shows {Panels}")]
     private static partial void LogAssigned(ILogger logger, string hardwareId, string name, string panels);
 
@@ -284,12 +155,6 @@ public sealed partial class BridgeHostedService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not send device {HardwareId} its new settings: {Reason}")]
     private static partial void LogRefreshFailed(ILogger logger, string hardwareId, string reason);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "{Port} is not an available device: {Reason}")]
-    private static partial void LogCandidateRejected(ILogger logger, string port, string reason);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Lost device {HardwareId}; looking for it again")]
-    private static partial void LogDeviceLost(ILogger logger, string hardwareId, Exception error);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "A sim write, swap or render failed")]
     private static partial void LogEffectFailed(ILogger logger, Exception error);
