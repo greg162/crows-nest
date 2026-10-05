@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using Crowsnest.Core.Application;
 using Crowsnest.Core.Application.Panels;
 using Crowsnest.Core.Application.Ports;
+using Crowsnest.Core.Application.Settings;
 using Crowsnest.Core.Domain.Tuning;
 using Crowsnest.Device;
 using Crowsnest.Device.Transport;
@@ -16,11 +18,15 @@ namespace Crowsnest.Host;
 /// probed; each device found runs until its link fails, is disposed, and is found again by a
 /// later scan.
 ///
+/// What each device shows, and how bright it is, comes from <see cref="SettingsStore"/> (§6.2).
+/// When the file changes, connected devices are reassigned and sent their brightness again.
+///
 /// The spec's separate <c>DeviceHostedService</c> is still folded in here; the scan below is the
 /// seed of <c>IDeviceManager</c>.
 /// </summary>
 public sealed partial class BridgeHostedService(
     PanelSetup setup,
+    SettingsStore settings,
     ISimParameterGateway sim,
     IInputActionMap actions,
     TimeProvider time,
@@ -28,11 +34,31 @@ public sealed partial class BridgeHostedService(
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromSeconds(2);
 
+    // Devices being served, by hardware id, so new settings reach them.
+    private readonly ConcurrentDictionary<string, DeviceConnection> _live = new(StringComparer.Ordinal);
+    private volatile PanelCoordinator? _coordinator;
+
+    private string AvailablePanels => string.Join(", ", setup.Panels.Select(p => p.PanelId));
+
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        settings.Changed += OnSettingsChanged;
+        CheckPanelNames(settings.Current);
+        await base.StartAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        settings.Changed -= OnSettingsChanged;
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            PanelCoordinator coordinator = new(setup, sim, actions, TuningOptions.Default, time, e => LogEffectFailed(log, e));
+            PanelCoordinator coordinator = new(setup, sim, actions, TuningOptions.Default, time, e => LogEffectFailed(log, e), PagesFor);
+            _coordinator = coordinator;
             using CancellationTokenSource runStop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             Task run = coordinator.RunAsync(runStop.Token);
             Task scan = ScanAsync(coordinator, runStop.Token);
@@ -102,7 +128,9 @@ public sealed partial class BridgeHostedService(
     /// <summary>Opens a port and completes the handshake, or returns null.</summary>
     private async Task<DeviceConnection?> ProbeAsync(string port, HashSet<string> refused, CancellationToken ct)
     {
-        DeviceConnection device = new(new SerialPortTransport(port));
+        DeviceConnection device = new(
+            new SerialPortTransport(port),
+            new DeviceConnectionOptions { BrightnessFor = identity => settings.Current.Find(identity.HardwareId)?.Brightness });
         try
         {
             await device.ConnectAsync(ct).ConfigureAwait(false);
@@ -137,8 +165,10 @@ public sealed partial class BridgeHostedService(
             await using (device.ConfigureAwait(false))
             {
                 LogConnected(log, device.Identity.DeviceType, device.Identity.FirmwareVersion, id, port);
+                DescribeAssignment(id, settings.Current);
                 device.LogReceived = line => LogFirmware(log, FirmwareLevel(line.Level), id, line.Level, line.Message);
 
+                _live[id] = device;
                 await coordinator.RunDeviceAsync(id, device, ct).ConfigureAwait(false);
             }
         }
@@ -152,6 +182,65 @@ public sealed partial class BridgeHostedService(
         catch (Exception)
         {
             // Shutting down; the close failing does not matter.
+        }
+        finally
+        {
+            _live.TryRemove(new KeyValuePair<string, DeviceConnection>(id, device));
+        }
+    }
+
+    /// <summary>What a device shows: its panels' pages, or nothing (the unassigned screen). Called on the coordinator's loop.</summary>
+    private IReadOnlyList<PanelPage> PagesFor(string hardwareId) =>
+        setup.PagesFor(settings.Current.Find(hardwareId)?.Panels ?? []);
+
+    /// <summary>On the settings file's watcher thread.</summary>
+    private void OnSettingsChanged(BridgeSettings changed)
+    {
+        CheckPanelNames(changed);
+        _coordinator?.Reassign();
+
+        foreach ((string id, DeviceConnection device) in _live)
+        {
+            DescribeAssignment(id, changed);
+            _ = RefreshAsync(id, device);
+        }
+    }
+
+    private async Task RefreshAsync(string id, DeviceConnection device)
+    {
+        try
+        {
+            await device.RefreshConfigAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            // Gone, or going: it gets its config again when it is found.
+            LogRefreshFailed(log, id, e.Message);
+        }
+    }
+
+    private void CheckPanelNames(BridgeSettings current)
+    {
+        foreach ((string key, DeviceSettings device) in current.Devices)
+        {
+            foreach (string panel in device.Panels.Where(p => setup.Panels.All(known => known.PanelId != p)))
+            {
+                LogUnknownPanel(log, key, panel, AvailablePanels);
+            }
+        }
+    }
+
+    private void DescribeAssignment(string hardwareId, BridgeSettings current)
+    {
+        string shortId = hardwareId.Length > 6 ? hardwareId[^6..] : hardwareId;
+        DeviceSettings? device = current.Find(hardwareId);
+        if (setup.PagesFor(device?.Panels ?? []).Count == 0)
+        {
+            LogUnassigned(log, hardwareId, settings.FilePath, shortId, AvailablePanels);
+        }
+        else
+        {
+            LogAssigned(log, hardwareId, device!.Name ?? shortId, string.Join(", ", device.Panels));
         }
     }
 
@@ -183,6 +272,18 @@ public sealed partial class BridgeHostedService(
 
     [LoggerMessage(Message = "Device {HardwareId} firmware [{Level}] {Message}")]
     private static partial void LogFirmware(ILogger logger, LogLevel logLevel, string hardwareId, string level, string message);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Device {HardwareId} ({Name}) shows {Panels}")]
+    private static partial void LogAssigned(ILogger logger, string hardwareId, string name, string panels);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Device {HardwareId} has no panels assigned. In {Path}, add \"{ShortId}\" under \"devices\" with the panels it shows: {Available}")]
+    private static partial void LogUnassigned(ILogger logger, string hardwareId, string path, string shortId, string available);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Settings for device {Device} name panel \"{Panel}\", which does not exist. Panels: {Available}")]
+    private static partial void LogUnknownPanel(ILogger logger, string device, string panel, string available);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not send device {HardwareId} its new settings: {Reason}")]
+    private static partial void LogRefreshFailed(ILogger logger, string hardwareId, string reason);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Port} is not an available device: {Reason}")]
     private static partial void LogCandidateRejected(ILogger logger, string port, string reason);

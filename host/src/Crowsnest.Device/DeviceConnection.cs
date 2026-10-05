@@ -117,9 +117,23 @@ public sealed class DeviceConnection : IDevice
         Writer.WriteAsync(
             new HostHelloAck
             {
-                Config = new HostConfig { Brightness = _options.Brightness, Theme = _options.Theme },
+                Config = new HostConfig
+                {
+                    Brightness = (Identity is { } identity ? _options.BrightnessFor?.Invoke(identity) : null) ?? _options.Brightness,
+                    Theme = _options.Theme,
+                },
             },
             ct);
+
+    /// <summary>
+    /// Sends the device its config again, after its settings changed. The firmware applies a
+    /// <c>hello_ack</c> whenever one arrives, not only in the handshake.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The handshake has not completed.</exception>
+    public Task RefreshConfigAsync(CancellationToken ct) =>
+        _handshakeDone
+            ? SendHelloAckAsync(ct).AsTask()
+            : throw new InvalidOperationException("The device has not completed the handshake.");
 
     /// <summary>
     /// The device restarted under an open port: a crash, or the reset button. The ESP32-S3's

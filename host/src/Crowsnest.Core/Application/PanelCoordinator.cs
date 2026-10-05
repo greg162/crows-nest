@@ -27,19 +27,32 @@ public sealed class PanelCoordinator
     private readonly PanelEngine _engine;
     private readonly TimeProvider _time;
     private readonly Action<Exception>? _onEffectFailed;
+    private readonly Func<string, IReadOnlyList<PanelPage>>? _pagesFor;
     private readonly Channel<BridgeEvent> _events = Channel.CreateUnbounded<BridgeEvent>(new UnboundedChannelOptions { SingleReader = true });
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     // Touched only by the loop.
     private readonly Dictionary<string, IDevice> _devices = new(StringComparer.Ordinal);
 
-    /// <param name="setup">The registry, the pages every device shows, and panel runtime logic such as COM following the spacing mode (§5.8).</param>
+    /// <param name="setup">The registry, every panel's pages, and panel runtime logic such as COM following the spacing mode (§5.8).</param>
     /// <param name="onEffectFailed">
     /// Called when a sim write, swap or render throws. The loop carries on: a lost write is
     /// caught by the settle timeout, a lost frame by the next one. Core has no logger (spec §4:
     /// BCL only), so the host passes one in here.
     /// </param>
-    public PanelCoordinator(PanelSetup setup, ISimParameterGateway sim, IInputActionMap actions, TuningOptions options, TimeProvider time, Action<Exception>? onEffectFailed = null)
+    /// <param name="pagesFor">
+    /// The pages a device shows, by hardware id (§6.2): empty for the unassigned screen. Asked
+    /// on the loop when the device joins and on every <see cref="Reassign"/>. Null gives every
+    /// device every page.
+    /// </param>
+    public PanelCoordinator(
+        PanelSetup setup,
+        ISimParameterGateway sim,
+        IInputActionMap actions,
+        TuningOptions options,
+        TimeProvider time,
+        Action<Exception>? onEffectFailed = null,
+        Func<string, IReadOnlyList<PanelPage>>? pagesFor = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(sim);
@@ -50,7 +63,14 @@ public sealed class PanelCoordinator
         _engine = new PanelEngine(setup.Registry, setup.Pages, actions, options, setup.Behaviours);
         _time = time;
         _onEffectFailed = onEffectFailed;
+        _pagesFor = pagesFor;
     }
+
+    /// <summary>
+    /// Asks <c>pagesFor</c> again for every connected device, after the settings changed, and
+    /// redraws those whose pages differ. Safe from any thread.
+    /// </summary>
+    public void Reassign() => _events.Writer.TryWrite(AssignmentsChanged.Instance);
 
     /// <summary>Runs until <paramref name="ct"/> is cancelled, or faults if the sim stream does. Call once.</summary>
     public async Task RunAsync(CancellationToken ct)
@@ -81,6 +101,7 @@ public sealed class PanelCoordinator
                     SnapshotReceived snapshot => _engine.OnSnapshot(snapshot.Snapshot),
                     SimStateChanged state => _engine.OnSimConnection(state.State),
                     Tick => _engine.OnTick(now),
+                    AssignmentsChanged => Reassign(_devices.Keys),
                     _ => PanelEffects.None,
                 };
 
@@ -174,7 +195,23 @@ public sealed class PanelCoordinator
         }
 
         joined.Done.TrySetResult();
-        return _engine.Join(joined.DeviceId);
+        return _engine.Join(joined.DeviceId, _pagesFor?.Invoke(joined.DeviceId));
+    }
+
+    private PanelEffects Reassign(IEnumerable<string> deviceIds)
+    {
+        if (_pagesFor is null)
+        {
+            return PanelEffects.None;
+        }
+
+        List<DeviceFrame> frames = [];
+        foreach (string id in deviceIds)
+        {
+            frames.AddRange(_engine.Assign(id, _pagesFor(id)).Frames);
+        }
+
+        return frames.Count == 0 ? PanelEffects.None : new PanelEffects([], frames);
     }
 
     private PanelEffects Leave(DeviceLeft left)
@@ -281,6 +318,11 @@ public sealed class PanelCoordinator
     private sealed record Tick : BridgeEvent
     {
         public static Tick Instance { get; } = new();
+    }
+
+    private sealed record AssignmentsChanged : BridgeEvent
+    {
+        public static AssignmentsChanged Instance { get; } = new();
     }
 
     private sealed class Forward<T>(Channel<BridgeEvent> events, Func<T, BridgeEvent> wrap) : IObserver<T>

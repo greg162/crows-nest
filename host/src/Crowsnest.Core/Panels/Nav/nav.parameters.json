@@ -1,5 +1,5 @@
-// NAV 1 (spec §5.2). Registered in phase 1 although only COM 1 ships, to prove the
-// generalisation before it is needed (spec §13, phase 1). The module has no view yet, so no page.
+// NAV 1 (spec §5.2). Registered in phase 1 to prove the generalisation before it was needed
+// (spec §13); its page is in View/nav.view.json.
 [
   {
     "id": "nav1.standby", "label": "NAV 1 STBY", "group": "nav1", "unit": "kHz",

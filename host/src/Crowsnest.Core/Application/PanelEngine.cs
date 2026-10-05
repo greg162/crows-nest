@@ -38,15 +38,23 @@ public sealed record PanelEffects(IReadOnlyList<SimCommand> Sim, IReadOnlyList<D
 /// navigate independently. Each call takes one event and returns what to do about it, including
 /// a frame for every device whose screen it changed; <see cref="PanelCoordinator"/> does it.
 ///
+/// A device with no pages assigned shows the "unassigned" screen with the last six characters
+/// of its hardware id, which the user copies into settings (§6.2). Its inputs are acknowledged
+/// and otherwise ignored.
+///
 /// Pure and single-threaded, like the sessions it holds: time comes in as <c>now</c>, and the
 /// coordinator's one event loop is the only caller.
 /// </summary>
 public sealed class PanelEngine : IPanelContext
 {
+    /// <summary>The page id of the screen an unassigned device shows.</summary>
+    public const string UnassignedPageId = "unassigned";
+
     private static readonly FieldRole[] Roles = [FieldRole.Primary, FieldRole.Secondary, FieldRole.Tertiary];
 
     private readonly IReadOnlyDictionary<ParameterId, TuningSession> _sessions;
     private readonly IReadOnlyList<PanelPage> _pages;
+    private readonly HashSet<string> _pageIds;
     private readonly IInputActionMap _actions;
     private readonly IReadOnlyList<IPanelBehaviour> _behaviours;
     private readonly Dictionary<string, DeviceView> _devices = new(StringComparer.Ordinal);
@@ -56,7 +64,7 @@ public sealed class PanelEngine : IPanelContext
 
     private SimConnectionState _sim = SimConnectionState.Disconnected;
 
-    /// <param name="pages">The pages every device shows, until devices have assignments (spec §6.2).</param>
+    /// <param name="pages">Every page a device may be given (spec §6.2); a device that joins without an assignment gets them all.</param>
     public PanelEngine(
         ParameterRegistry registry,
         IReadOnlyList<PanelPage> pages,
@@ -83,6 +91,7 @@ public sealed class PanelEngine : IPanelContext
         }
 
         _pages = pages;
+        _pageIds = [.. pages.Select(p => p.Id)];
         _actions = actions;
         _behaviours = behaviours ?? [];
 
@@ -93,22 +102,64 @@ public sealed class PanelEngine : IPanelContext
 
     public IReadOnlyCollection<string> Devices => _devices.Keys;
 
-    public PanelPage CurrentPage(string deviceId) => View(deviceId).Pages.Current;
+    /// <exception cref="InvalidOperationException">The device is unassigned, so it has no page.</exception>
+    public PanelPage CurrentPage(string deviceId) =>
+        (View(deviceId).Pages ?? throw new InvalidOperationException($"Device '{deviceId}' has no pages assigned.")).Current;
+
+    /// <summary>The ids of the pages a device can show, in order; empty when unassigned.</summary>
+    public IReadOnlyList<string> AssignedPages(string deviceId) => View(deviceId).PageIds;
 
     public TuningSession Session(ParameterId id) => _sessions[id];
 
-    /// <summary>A device has connected. It starts on the first page and gets its first frame.</summary>
-    public PanelEffects Join(string deviceId)
+    /// <summary>A device has connected. It starts on the first of its pages and gets its first frame.</summary>
+    /// <param name="pages">What it shows: null for every page, empty for the unassigned screen.</param>
+    public PanelEffects Join(string deviceId, IReadOnlyList<PanelPage>? pages = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(deviceId);
 
-        DeviceView view = new(deviceId, new PageNavigator(_pages));
+        DeviceView view = new(deviceId);
+        view.Assign(Checked(pages ?? _pages));
         if (!_devices.TryAdd(deviceId, view))
         {
             throw new InvalidOperationException($"Device '{deviceId}' has already joined.");
         }
 
         return Redraw(view);
+    }
+
+    /// <summary>
+    /// Gives a connected device different pages, when its settings change. It stays on the page
+    /// it was showing if it still has it. Nothing happens if the pages are the same.
+    /// </summary>
+    /// <param name="pages">Empty for the unassigned screen.</param>
+    public PanelEffects Assign(string deviceId, IReadOnlyList<PanelPage> pages)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+
+        DeviceView view = View(deviceId);
+        if (view.PageIds.SequenceEqual(pages.Select(p => p.Id), StringComparer.Ordinal))
+        {
+            return PanelEffects.None;
+        }
+
+        string? showing = view.Pages?.Current.Id;
+        view.Assign(Checked(pages));
+        if (showing is not null)
+        {
+            view.Pages?.TryGoTo(showing);
+        }
+
+        return Redraw(view);
+    }
+
+    private IReadOnlyList<PanelPage> Checked(IReadOnlyList<PanelPage> pages)
+    {
+        foreach (PanelPage page in pages.Where(p => !_pageIds.Contains(p.Id)))
+        {
+            throw new ArgumentException($"Page '{page.Id}' is not one of the engine's pages.", nameof(pages));
+        }
+
+        return pages;
     }
 
     /// <summary>A device has gone. Unknown ids are ignored, so leaving twice is harmless.</summary>
@@ -183,8 +234,13 @@ public sealed class PanelEngine : IPanelContext
         view.AckSequence = Math.Max(view.AckSequence, input.Sequence);
         DeviceView? toAck = acked ? view : null;
 
+        if (view.Pages is null)
+        {
+            return Effects([], [], toAck);
+        }
+
         BridgeCommand? command = _actions.Resolve(input, new PanelState(view.Pages.Current));
-        return command is null ? Effects([], [], toAck) : Execute(view, command, input, now, toAck);
+        return command is null ? Effects([], [], toAck) : Execute(view, view.Pages, command, input, now, toAck);
     }
 
     /// <summary>Runs every session's timers: the write debounce, the forced write, the settle timeout.</summary>
@@ -212,9 +268,9 @@ public sealed class PanelEngine : IPanelContext
         return Effects(sim, changed);
     }
 
-    private PanelEffects Execute(DeviceView view, BridgeCommand command, DeviceInputEvent input, DateTimeOffset now, DeviceView? toAck)
+    private PanelEffects Execute(DeviceView view, PageNavigator pages, BridgeCommand command, DeviceInputEvent input, DateTimeOffset now, DeviceView? toAck)
     {
-        TuningSession tuned = _sessions[view.Pages.Current.Fields[0]];
+        TuningSession tuned = _sessions[pages.Current.Fields[0]];
 
         switch (command)
         {
@@ -234,7 +290,7 @@ public sealed class PanelEngine : IPanelContext
             case BridgeCommand.CycleCursor:
                 return Effects([], tuned.ToggleCursor().DisplayChanged ? [tuned.Parameter.Id] : [], toAck);
 
-            case BridgeCommand.SwapSlots when view.Pages.Current.SwapEvent is { } swap:
+            case BridgeCommand.SwapSlots when pages.Current.SwapEvent is { } swap:
             {
                 // Send what the pilot has dialled before swapping it, or the sim swaps the old value.
                 List<SimCommand> sim = [];
@@ -249,14 +305,14 @@ public sealed class PanelEngine : IPanelContext
             }
 
             case BridgeCommand.NextPage:
-                view.Pages.Next();
+                pages.Next();
                 return Redraw(view);
 
             case BridgeCommand.PreviousPage:
-                view.Pages.Previous();
+                pages.Previous();
                 return Redraw(view);
 
-            case BridgeCommand.GoToPage go when view.Pages.TryGoTo(go.PageId):
+            case BridgeCommand.GoToPage go when pages.TryGoTo(go.PageId):
                 return Redraw(view);
 
             default:
@@ -286,7 +342,7 @@ public sealed class PanelEngine : IPanelContext
         List<DeviceFrame> frames = [];
         foreach (DeviceView view in _devices.Values)
         {
-            if (view == toAck || view.Pages.Current.Fields.Any(changed.Contains))
+            if (view == toAck || view.Pages?.Current.Fields.Any(changed.Contains) == true)
             {
                 frames.Add(new DeviceFrame(view.Id, Render(view)));
             }
@@ -299,7 +355,12 @@ public sealed class PanelEngine : IPanelContext
 
     private DisplayFrame Render(DeviceView view)
     {
-        PanelPage page = view.Pages.Current;
+        if (view.Pages is not { } pages)
+        {
+            return RenderUnassigned(view);
+        }
+
+        PanelPage page = pages.Current;
         List<FieldDescriptor> fields = [];
 
         for (int i = 0; i < page.Fields.Count; i++)
@@ -324,11 +385,23 @@ public sealed class PanelEngine : IPanelContext
         return new DisplayFrame(
             ++view.Revision,
             _sim,
-            new PageDescriptor(page.Id, page.Title, page.Layout, view.Pages.Index, view.Pages.Count),
+            new PageDescriptor(page.Id, page.Title, page.Layout, pages.Index, pages.Count),
             fields,
             Notice: null,
             AckSequence: view.AckSequence);
     }
+
+    /// <summary>
+    /// A page the firmware already draws: the title, then the last six characters of the
+    /// hardware id as the value, the same six the waiting screen shows and settings accept.
+    /// </summary>
+    private DisplayFrame RenderUnassigned(DeviceView view) => new(
+        ++view.Revision,
+        _sim,
+        new PageDescriptor(UnassignedPageId, "NOT ASSIGNED", PageLayout.SingleValue, Index: 0, Count: 1),
+        [new FieldDescriptor(FieldRole.Primary, "ADD TO SETTINGS", view.Id.Length > 6 ? view.Id[^6..] : view.Id)],
+        Notice: null,
+        AckSequence: view.AckSequence);
 
     private DeviceView View(string deviceId) =>
         _devices.TryGetValue(deviceId, out DeviceView? view)
@@ -338,11 +411,20 @@ public sealed class PanelEngine : IPanelContext
     private static bool IsPending(TuningSession session) => session.Status == PendingWriteStatus.AwaitingConfirmation;
 
     /// <summary>What belongs to one device rather than to the sim: where it is, and what it has seen.</summary>
-    private sealed class DeviceView(string id, PageNavigator pages)
+    private sealed class DeviceView(string id)
     {
         public string Id { get; } = id;
 
-        public PageNavigator Pages { get; } = pages;
+        /// <summary>Null while the device is unassigned.</summary>
+        public PageNavigator? Pages { get; private set; }
+
+        public IReadOnlyList<string> PageIds { get; private set; } = [];
+
+        public void Assign(IReadOnlyList<PanelPage> pages)
+        {
+            Pages = pages.Count == 0 ? null : new PageNavigator(pages);
+            PageIds = [.. pages.Select(p => p.Id)];
+        }
 
         public long Revision { get; set; }
 

@@ -910,6 +910,24 @@ Each device keeps its own `PageNavigator` — devices navigate independently eve
 
 **First cut implemented and verified 2026-10-03** (two CrowPanels, fw 0.3.4, COM4 + COM5). `PanelEngine` keeps the shared `TuningSession`s and a per-device view (page navigator, revision, ack, last-turn time), keyed by hardware id; after each event it renders a frame only for the panels whose screen changed. `PanelCoordinator.RunAsync` runs for the life of the bridge, and each connected panel is served by `RunDeviceAsync(hardwareId, device, ct)`, which ends (throwing) only for that panel when its link faults; a second panel claiming a hardware id already connected is refused. `BridgeHostedService` scans every 2 s, skipping the ports it already holds, and reports a refused port once rather than every scan. A `hello` carrying a different hardware id on an open link faults it instead of rejoining. Verified on hardware: turning one panel's knob updates the other at once, the panels page independently, and a pulled cable drops only that panel, which rejoins when plugged back in. Not yet: assignments (every panel gets every page), the "unassigned" screen, per-panel `hello_ack` settings, and `IDeviceManager` as a type of its own (the scan lives in `BridgeHostedService`).
 
+**Assignments implemented 2026-10-04.** A device is assigned whole panels, not pages: `settings.json` lists panel ids per device, and the device pages through those panels' pages in the order listed. The spec's `"pages"` list per device is not built; whole panels match the one-unit-per-panel plan, and a page list can be added later if a device ever needs part of a panel.
+
+```jsonc
+"devices": {
+  "dccc6c":       { "name": "Radios", "panels": ["com"], "brightness": 80 },
+  "a4cf12de9f44": { "panels": ["nav"] }
+}
+```
+
+- **Keys** are the full 12-character hardware id or its last six: the six the waiting screen ("PANEL dccc6c") and the unassigned screen show. The full id wins if both are listed. Unknown keys in the file are errors (`"panel"` for `"panels"`), so a typo is reported, not silently unassigned.
+- **`BridgeSettings`** (`Core/Application/Settings/`) reads and writes the file and finds a device's entry; pure, so it is tested without files. `PanelSetup` now keeps each panel's pages (`Panels`) and `PagesFor(panelIds)` turns an assignment into pages.
+- **The engine** takes a device's pages at `Join` (null for all, which tools and tests use; empty for unassigned) and `Assign` changes them while connected, keeping the current page if it is still there and doing nothing if the list is the same. An unassigned device gets the "NOT ASSIGNED" screen, which is the firmware's existing `single` layout with the six characters as its value (so no firmware change), and its inputs are acknowledged and otherwise ignored.
+- **The coordinator** takes `pagesFor(hardwareId)`, asked on the loop at join, and `Reassign()` asks again for every device.
+- **Brightness** per device: `DeviceConnectionOptions.BrightnessFor` is asked for every `hello_ack`, and `DeviceConnection.RefreshConfigAsync` sends one again; the firmware applies a `hello_ack` whenever one arrives, so a new brightness takes effect without a replug. `theme` stays global, since the firmware does not use it yet.
+- **The host**: `BridgeHostedService` resolves assignments from `SettingsStore` (§8), logs what each device shows or, for an unassigned one, exactly what to add and where, warns about panel ids that do not exist, and on a settings change reassigns and re-sends brightness to every connected device.
+
+Still open from this section: `IDeviceManager` as its own type, and the tray's notification for an unassigned device.
+
 ### 6.3 Firmware updates over the link
 
 Detecting devices and offering to update them is the right call, and it is worth more here than with one device — nobody wants to flash five boards by hand. But do it **over the existing protocol**, not by shelling out to `esptool`.
@@ -1100,9 +1118,11 @@ public sealed class StartupRegistration;                // HKCU\...\Run
 public sealed class SingleInstanceGuard;                // named mutex + pipe activation
 ```
 
+**`SettingsStore` implemented 2026-10-04.** In `Crowsnest.Host`. Creates the file with a commented starter when it is missing, reads it at startup, and watches it: a saved edit applies within about 300 ms, and a file that does not parse is logged and the last good settings kept. `Save` writes a `.tmp` and moves it over the file, so a crash leaves the old settings or the new. The tray will run the host in its own process, change settings in memory, and `Save`; until then the file is edited by hand. Holds only device assignments and brightness for now (§6.2).
+
 **Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `PanelCatalog.Load()` (until 2026-10-04, `DefaultParameters.Load()`), the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.2) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `host/tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
 
-Settings live in `%LOCALAPPDATA%\Crowsnest\settings.json`; logs roll into `%LOCALAPPDATA%\Crowsnest\logs\` with seven-day retention via Serilog, plus an in-memory ring buffer sink so the diagnostics window can tail without touching disk.
+Settings live in `%LOCALAPPDATA%\Crowsnest\settings.json` (per user and per machine: the file describes the boards plugged into this PC, so it must not roam); logs roll into `%LOCALAPPDATA%\Crowsnest\logs\` with seven-day retention via Serilog, plus an in-memory ring buffer sink so the diagnostics window can tail without touching disk.
 
 The tray icon carries the whole status story: grey when nothing is connected, amber when one of sim or device is up, green when both are. Hovering shows which.
 

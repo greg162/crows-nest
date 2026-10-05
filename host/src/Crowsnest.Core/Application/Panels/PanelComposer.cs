@@ -36,7 +36,7 @@ public static partial class PanelComposer
 
         List<ParameterDefinition> parameters = [];
         List<SimSubscription> watches = [];
-        List<PanelPage> pages = [];
+        List<PanelPages> panels = [];
         List<IPanelBehaviour> behaviours = [];
         Dictionary<ParameterId, int> demoValues = [];
         HashSet<string> ids = new(StringComparer.Ordinal);
@@ -62,7 +62,7 @@ public static partial class PanelComposer
 
             parameters.AddRange(contents.Parameters);
             watches.AddRange(contents.Watches);
-            pages.AddRange(contents.Pages);
+            panels.Add(new PanelPages(id, [.. contents.Pages]));
             behaviours.AddRange(builder.Behaviours);
             foreach ((ParameterId parameter, int value) in contents.DemoValues)
             {
@@ -76,7 +76,7 @@ public static partial class PanelComposer
             behaviour.Validate(registry);
         }
 
-        return new PanelSetup(registry, pages, behaviours, demoValues);
+        return new PanelSetup(registry, panels, behaviours, demoValues);
     }
 
     /// <summary>

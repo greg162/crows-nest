@@ -1,3 +1,5 @@
+using Crowsnest.Core.Application.Ports;
+
 namespace Crowsnest.Device;
 
 /// <summary>Timings for the link (spec §6.1). Defaults are the values the spec names.</summary>
@@ -21,6 +23,12 @@ public sealed record DeviceConnectionOptions
     public int MissedPongLimit { get; init; } = 3;
 
     public int Brightness { get; init; } = 80;
+
+    /// <summary>
+    /// A device's brightness by its identity, such as from its settings (spec §6.2); null for
+    /// <see cref="Brightness"/>. Asked whenever a <c>hello_ack</c> is sent.
+    /// </summary>
+    public Func<DeviceIdentity, int?>? BrightnessFor { get; init; }
 
     public string Theme { get; init; } = "day";
 }

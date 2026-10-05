@@ -3,8 +3,8 @@ using Crowsnest.Core.Application.Panels;
 namespace Crowsnest.Core.Panels.Nav;
 
 /// <summary>
-/// NAV 1 (spec §5.8). Pure data: everything is in <c>nav.parameters.json</c>. It has no view
-/// yet, so it is registered but shows no page until phase 5 (spec §13).
+/// NAV 1 (spec §5.8). Pure data: the parameters are in <c>nav.parameters.json</c> and the page
+/// in <c>View/nav.view.json</c>, so there is nothing to configure.
 /// </summary>
 public sealed class NavPanelModule : IPanelModule
 {

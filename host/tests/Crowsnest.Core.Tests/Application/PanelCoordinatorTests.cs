@@ -1,4 +1,5 @@
 using Crowsnest.Core.Application;
+using Crowsnest.Core.Application.Panels;
 using Crowsnest.Core.Application.Ports;
 using Crowsnest.Core.Domain;
 using Crowsnest.Core.Domain.Tuning;
@@ -30,11 +31,11 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     private Task? _run;
     private Task? _simulated;
 
-    private void Start()
+    private void Start(Func<string, IReadOnlyList<PanelPage>>? pagesFor = null)
     {
         _coordinator = new(
             PanelCatalog.Load(), _sim, DefaultInputActionMap.Instance,
-            TuningOptions.Default, _time, e => { lock (_failures) { _failures.Add(e); } });
+            TuningOptions.Default, _time, e => { lock (_failures) { _failures.Add(e); } }, pagesFor);
 
         _run = _coordinator.RunAsync(_stop.Token);
         _simulated = _coordinator.RunDeviceAsync(DeviceA, _device, _stop.Token);
@@ -213,6 +214,35 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
         _other.Swipe(SwipeDir.Left, _time.GetUtcNow());
         await Eventually(() => _other.Latest?.Page.Id == "com2", "the other device to change page");
         Assert.Equal("com1", _device.Latest!.Page.Id);
+        Assert.False(other.IsCompleted);
+    }
+
+    [Fact]
+    public async Task DevicesShowTheirAssignedPagesAndFollowNewSettings()
+    {
+        PanelSetup setup = PanelCatalog.Load();
+        Dictionary<string, string[]> assigned = new() { [DeviceA] = [], [DeviceB] = ["nav"] };
+        Start(id =>
+        {
+            lock (assigned)
+            {
+                return setup.PagesFor(assigned[id]);
+            }
+        });
+        Task other = _coordinator!.RunDeviceAsync(DeviceB, _other, _stop.Token);
+        await Eventually(() => _device.Latest?.Page.Id == PanelEngine.UnassignedPageId, "the unassigned screen");
+        await Eventually(() => _other.Latest?.Page.Id == "nav1", "the second device to show NAV 1");
+        int otherFrames = _other.Frames.Count;
+
+        lock (assigned)
+        {
+            assigned[DeviceA] = ["com"];
+        }
+
+        _coordinator.Reassign();
+
+        await Eventually(() => _device.Latest?.Page.Id == "com1", "the first device to show COM 1");
+        Assert.Equal(otherFrames, _other.Frames.Count); // its pages did not change, so no redraw
         Assert.False(other.IsCompleted);
     }
 

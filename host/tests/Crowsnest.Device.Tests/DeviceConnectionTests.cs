@@ -89,6 +89,49 @@ public class DeviceConnectionTests
     }
 
     [Fact]
+    public async Task EachDeviceGetsItsOwnBrightnessAndCanBeSentItAgain()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
+
+        int brightness = 35;
+        await using var device = new DeviceConnection(hostEnd, FastHandshake with
+        {
+            BrightnessFor = identity => identity.HardwareId == "a4cb8fdccc6c" ? Volatile.Read(ref brightness) : null,
+        });
+        await device.ConnectAsync(CancellationToken.None);
+        await Eventually(() => fake.HelloAcks == 1);
+        Assert.Equal(35, fake.Brightness);
+
+        Volatile.Write(ref brightness, 90);
+        await device.RefreshConfigAsync(CancellationToken.None);
+
+        await Eventually(() => fake.HelloAcks == 2);
+        Assert.Equal(90, fake.Brightness);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(fakeLoop);
+    }
+
+    [Fact]
+    public async Task ADeviceWithNoBrightnessOfItsOwnGetsTheDefault()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new FakeDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
+
+        await using var device = new DeviceConnection(hostEnd, FastHandshake with { Brightness = 70, BrightnessFor = _ => null });
+        await device.ConnectAsync(CancellationToken.None);
+
+        await Eventually(() => fake.HelloAcks == 1);
+        Assert.Equal(70, fake.Brightness);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(fakeLoop);
+    }
+
+    [Fact]
     public async Task AHelloFromADifferentDeviceFaultsTheLinkInsteadOfRejoining()
     {
         (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
@@ -279,8 +322,12 @@ public class DeviceConnectionTests
 
         private long _sequence;
         private int _helloAcks;
+        private int _brightness;
 
         public int HelloAcks => Volatile.Read(ref _helloAcks);
+
+        /// <summary>From the last <c>hello_ack</c>.</summary>
+        public int Brightness => Volatile.Read(ref _brightness);
 
         /// <summary>The hello the device sends on boot, unasked, and in reply to the host's.</summary>
         public ValueTask SendHelloAsync(string hardwareId = "a4cb8fdccc6c") =>
@@ -323,7 +370,8 @@ public class DeviceConnectionTests
                         await SendHelloAsync();
                         break;
 
-                    case HostHelloAck:
+                    case HostHelloAck ack:
+                        Volatile.Write(ref _brightness, ack.Config?.Brightness ?? -1);
                         Interlocked.Increment(ref _helloAcks);
                         break;
 

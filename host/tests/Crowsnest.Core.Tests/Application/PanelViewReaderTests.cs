@@ -65,12 +65,12 @@ public class PanelViewReaderTests
         Assert.Throws<InvalidDataException>(() => Read(json));
 
     [Fact]
-    public void TheShippedViewsShowComOneThenComTwo()
+    public void TheShippedViewsShowTheComsThenNavOne()
     {
         IReadOnlyList<PanelPage> pages = PanelCatalog.Load().Pages;
 
-        Assert.Equal(["com1", "com2"], pages.Select(p => p.Id));
+        Assert.Equal(["com1", "com2", "nav1"], pages.Select(p => p.Id));
         Assert.All(pages, p => Assert.Equal(PageLayout.ActiveStandbyPair, p.Layout));
-        Assert.Equal(["COM_STBY_RADIO_SWAP", "COM2_RADIO_SWAP"], pages.Select(p => p.SwapEvent));
+        Assert.Equal(["COM_STBY_RADIO_SWAP", "COM2_RADIO_SWAP", "NAV1_RADIO_SWAP"], pages.Select(p => p.SwapEvent));
     }
 }

@@ -1,0 +1,8 @@
+// The NAV module's pages (spec §5.5): NAV 1 in the same "pair" layout as COM, active on top,
+// standby below in the box. NAV 2 joins when it is registered.
+{
+  "pages": [
+    { "id": "nav1", "title": "NAV1", "layout": "pair",
+      "fields": [ "nav1.standby", "nav1.active" ], "swapEvent": "NAV1_RADIO_SWAP" }
+  ]
+}

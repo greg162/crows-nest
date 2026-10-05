@@ -20,6 +20,7 @@ public static class HostBuilderExtensions
         IServiceCollection services = builder.Services;
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(_ => PanelCatalog.Load());
+        services.AddSingleton(sp => new SettingsStore(sp.GetRequiredService<ILogger<SettingsStore>>()));
         services.AddSingleton<IInputActionMap>(DefaultInputActionMap.Instance);
 
         services.AddSingleton(sp => new SimConnectParameterGateway(
