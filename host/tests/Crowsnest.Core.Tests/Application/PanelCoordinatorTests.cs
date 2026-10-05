@@ -33,7 +33,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     private void Start()
     {
         _coordinator = new(
-            DefaultParameters.Load(), _sim, DefaultInputActionMap.Instance,
+            PanelCatalog.Load(), _sim, DefaultInputActionMap.Instance,
             TuningOptions.Default, _time, e => { lock (_failures) { _failures.Add(e); } });
 
         _run = _coordinator.RunAsync(_stop.Token);
@@ -96,7 +96,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
 
         await Eventually(() => _device.Latest is not null, "the first frame");
 
-        Assert.Equal(DefaultParameters.Load().Registry.Subscriptions, _sim.Subscribed);
+        Assert.Equal(PanelCatalog.Load().Registry.Subscriptions, _sim.Subscribed);
         Assert.Equal("---.---", _device.Latest!.Fields[0].Text);
     }
 
@@ -234,7 +234,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     public async Task ADeviceReturnsWhenTheCoordinatorStops()
     {
         using CancellationTokenSource coordinatorOnly = new();
-        _coordinator = new(DefaultParameters.Load(), _sim, DefaultInputActionMap.Instance, TuningOptions.Default, _time);
+        _coordinator = new(PanelCatalog.Load(), _sim, DefaultInputActionMap.Instance, TuningOptions.Default, _time);
         _run = _coordinator.RunAsync(coordinatorOnly.Token);
         _simulated = _coordinator.RunDeviceAsync(DeviceA, _device, _stop.Token);
         await Eventually(() => _device.Latest is not null, "the first frame");

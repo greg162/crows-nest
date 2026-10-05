@@ -309,7 +309,7 @@ public sealed class ParameterRegistry
 - **Each cursor is tried against its grid at load**, so a step or wrap mode the grid rejects (`clamp` on a heading) fails at startup with the entry and cursor named, not on the first detent. Every error is an `InvalidDataException` naming the entry and field.
 - **Frequencies are read in `Hz` with scale 0.001**, as spike 0(a) verified, rather than MHz × 1000: no floating-point MHz round trip.
 - **`comChannel` starts at 25 kHz.** `spacingFrom` is parsed but not yet acted on; until the spacing behaviour (§5.8) exists, 25 kHz is the safe grid, since every 25 kHz channel is legal under 8.33.
-- **`Panels/DefaultParameters`** wires the JSON files, grid factories and formatters together. It stands in for `IPanelModule` / `PanelBuilder` and goes away when they arrive. `ParameterRegistry.Groups` is not built yet: swap events belong to pages, which the modules contribute.
+- **The panel modules** (§5.8) bring the JSON files, grid factories and formatters together; `PanelCatalog.Load()` composes them. (Until 2026-10-04 a stand-in, `Panels/DefaultParameters`, did this.) `ParameterRegistry.Groups` is not built: swap events belong to pages, which the modules contribute.
 - **The §11 test** runs over every shipped entry: each cursor span fits the widest formatted value, each cursor steps onto the grid from both ends, and each placeholder is as wide as a value.
 
 **Spans may count from the end** (added 2026-09-27). A fixed-width value uses start indices (`4..7` in `"121.500"`, `0..2` in `"005"`). A value whose width varies — `"9,000"` vs `"12,000"` — uses C# from-end indices, so one span in the registry fits every width: `..^4` is the thousands and up, `^3..^2` the hundreds digit. `CursorSpans.Resolve` (`Domain/Formatting/`) turns either form into start-relative indices when a frame is built; the device only ever sees `[start, end)` from the start. A span that does not fit (`"500"` has no thousands) resolves to nothing and no underline is drawn.
@@ -523,7 +523,7 @@ public sealed class PageNavigator
 
 `PageLayout` is a small closed set the firmware implements literally; the host chooses which one and fills it. A COM or NAV page is `ActiveStandbyPair`, autopilot altitude is `SingleValue`. This is what preserves the thin-client property while letting parameters with different shapes share one firmware.
 
-**View files (built 2026-09-30).** A panel module lists its pages in `Panels/<Module>/View/<module>.view.json`, embedded like the parameter files and read by `PanelViewReader`: each page names its `id`, `title`, `layout` (`pair`, `single` or `dual`, the wire's words), its `fields` (the tuned one first) and an optional `swapEvent`. `DefaultParameters.ViewResourceNames` gives the order. COM ships `com.view.json` with COM1 and COM2; a long press moves between them. Only the choice of layout and its contents cross to the firmware. No screen description goes over the wire.
+**View files (built 2026-09-30).** A panel module lists its pages in `Panels/<Module>/View/<module>.view.json`, embedded like the parameter files and read by `PanelViewReader`: each page names its `id`, `title`, `layout` (`pair`, `single` or `dual`, the wire's words), its `fields` (the tuned one first) and an optional `swapEvent`. Page order is the module order in `PanelCatalog`, then file order within a module. COM ships `com.view.json` with COM1 and COM2; a long press moves between them. Only the choice of layout and its contents cross to the firmware. No screen description goes over the wire.
 
 ### 5.6 Ports
 
@@ -650,6 +650,33 @@ namespace Crowsnest.Core.Application.Panels;
 
 public interface IPanelModule
 {
+    string Id { get; }                  // "com", "nav", "ap": every id in the module starts with it
+    void Configure(PanelBuilder panel); // only what JSON cannot say
+}
+
+public sealed class PanelBuilder
+{
+    public PanelBuilder AddGridType(string type, GridFactory factory);
+    public PanelBuilder AddFormatter(string key, IValueFormatter formatter);
+    public PanelBuilder AddBehaviour(IPanelBehaviour behaviour);
+}
+
+public interface IPanelBehaviour
+{
+    void OnSnapshot(ParameterSnapshot snapshot, IPanelContext context);
+    void Validate(ParameterRegistry registry) { }   // against the finished registry
+    // void OnCommand(BridgeCommand command, IPanelContext context);   with the transponder
+}
+```
+
+The module's JSON is not listed in code: it is found by folder. The module's namespace is its folder (`Crowsnest.Core.Panels.Com` is `Panels/Com/`), and every embedded `*.parameters.json`, `*.view.json` and `*.demo.json` under it belongs to the module. A pure-data panel such as NAV configures nothing at all.
+
+The sketch below is the original design, kept for the parts not built yet (`Order`, `PanelRequirements`, `AddInputOverride`); see the implementation note at the end of this section for what changed and why.
+
+```csharp
+// Original sketch (2026-09):
+public interface IPanelModule
+{
     string Id    { get; }               // "com", "nav", "autopilot"
     int    Order { get; }               // page ordering; sparse, e.g. 10, 20, 30
     PanelRequirements Requires { get; }
@@ -731,6 +758,15 @@ public sealed class PanelComposer
 ```
 
 **When to promote a folder to a project.** Not yet, and possibly never. Promote `Panels/Autopilot/` to `Crowsnest.Panels.Autopilot.csproj` only when one of these is true: it needs NuGet dependencies the rest of `Core` should not carry; it must ship or version independently; or third-party panels need loading at runtime. Assembly boundaries should be driven by deployment and reuse, not by conceptual tidiness — fifteen projects would mean fifteen `.csproj` files, fifteen DI registrations and a slower build in exchange for nothing.
+
+**Implemented 2026-10-04.** The goal: a new panel is **one folder under `Panels/` plus one line in `PanelCatalog`**, and nothing else in the code base changes, so a developer can add one without knowing the engine, the gateway or the host. `Panels/README.md` is the step-by-step guide. A source generator could remove even the catalog line, but one readable list was preferred to build-time machinery.
+
+- **`PanelComposer.Compose(modules)`** (`Application/Panels/`) configures each module, reads its files with the standard grids and formatters plus the module's own (a module cannot use another module's), builds one `ParameterRegistry`, then calls `Validate` on every behaviour. It returns `PanelSetup` (registry, pages, behaviours, demo values), now in its own file. An overload takes the files from a delegate instead of embedded resources, which the composer tests use.
+- **Ownership rules**, checked at load with the panel and file named in the error: the panel id is lower-case letters and digits; parameter, watch and page ids start with it; a page shows only its own panel's parameters; a page with a `swapEvent` has exactly two fields; a panel folder holds only the three JSON kinds; a module that finds no files says its namespace must match its folder.
+- **Changes from the sketch.** `Order` is gone: the catalog's list order is the page order. `PanelRequirements` and `AddInputOverride` wait for something to use them (capability filtering, below; the transponder). `AddGrid` takes a `GridFactory`, not an instance, and `AddBehaviour` takes an instance, not a type: `ComSpacingBehaviour` is both the `comChannel` factory and the behaviour, records followers while the JSON is read, and validates against the finished registry. `Configure` is called once per load and creates its state there, so each load gets its own behaviour. `AddParametersFromJson`/`AddPage`/`AddParameter` are replaced by the folder convention.
+- **`*.demo.json`** (optional) gives the values a pretend sim starts with, an object of id → value. `FakeParameterGateway` now takes the `PanelSetup` and knows no panel by name: it seeds from the demo values (else the bottom of the grid, 0 for a watch), and each page's `swapEvent` swaps its two fields. Anything else the sim does by itself is added by the caller with `fake.On(eventName, action)`. The device simulator adds COM's spacing switch, with its snap to 25 kHz, that way. No `ConfigureFake` on `IPanelModule`: Core cannot see `Crowsnest.Sim`, and it would put test scaffolding in production.
+- **Tests.** `PanelCatalogTests` fails if an `IPanelModule` is missing from the catalog, or if an embedded file under `Panels/` belongs to no registered module (both messages say what to add). It also loads each module on its own, which proves it does not lean on another, and checks that demo values are on their grids. `ArchitectureTests` reads the source (so uses inside method bodies count): `Domain/` and `Application/` never mention `Crowsnest.Core.Panels`; no `Panels/X` mentions `Panels.Y`; nothing else under `src/` mentions a panel family's namespace. `PanelComposerTests` covers the ownership rules.
+- **Still open:** `ParameterDefinition.GroupId` (JSON `"group"`) is read but nothing uses it; capability filtering (`PanelRequirements`, `PanelComposer` taking `DeviceCapabilities`); page assignment per device (§6.2).
 
 ## 6. Crowsnest.Device
 
@@ -1064,7 +1100,7 @@ public sealed class StartupRegistration;                // HKCU\...\Run
 public sealed class SingleInstanceGuard;                // named mutex + pipe activation
 ```
 
-**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `DefaultParameters.Load()`, the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.2) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `host/tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
+**Host implemented 2026-09-27 (first cut).** `AddCrowsnest()` registers `PanelCatalog.Load()` (until 2026-10-04, `DefaultParameters.Load()`), the `SimConnectParameterGateway` over `ManagedSimConnectClient`, `SimConnectHostedService` (runs the gateway's connect loop) and `BridgeHostedService`. The spec's separate `DeviceHostedService` is folded into `BridgeHostedService`: it probes every port with the known board's USB id (`VID_303A&PID_1001`) every 2 s, keeps the first that completes the handshake, runs a `PanelCoordinator` on it, and when the link fails disposes it and searches again; multiple panels (§6.2) will split the two. Logging is `Microsoft.Extensions.Logging` to the console. `host/tools/Crowsnest.DevConsole` runs it headless until `Crowsnest.Tray` exists. Not yet: `BridgeOptions`, `SettingsStore`, `HealthSnapshotProvider`, Serilog.
 
 Settings live in `%LOCALAPPDATA%\Crowsnest\settings.json`; logs roll into `%LOCALAPPDATA%\Crowsnest\logs\` with seven-day retention via Serilog, plus an in-memory ring buffer sink so the diagnostics window can tail without touching disk.
 

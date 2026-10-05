@@ -1,8 +1,8 @@
 using System.Threading.Channels;
 using Crowsnest.Core.Application;
+using Crowsnest.Core.Application.Panels;
 using Crowsnest.Core.Application.Ports;
 using Crowsnest.Core.Domain;
-using Crowsnest.Core.Panels.Com;
 
 namespace Crowsnest.Sim;
 
@@ -10,23 +10,17 @@ namespace Crowsnest.Sim;
 /// A sim with no sim behind it (spec §7.3, §10 Null Object), for developing and demoing the
 /// whole system with neither MSFS nor hardware present.
 ///
-/// It behaves the way the 2026-09 spikes saw MSFS 2024 behave: writes read back after a short
-/// latency; <c>COM_STBY_RADIO_SWAP</c> and <c>COM2_RADIO_SWAP</c> exchange active and standby;
-/// <c>COM_1_SPACING_MODE_SWITCH</c> toggles <c>com1.spacing</c>, and switching to 25 kHz snaps
-/// both COM 1 values onto the 25 kHz grid (spec §5.3). It does not police spacing on writes,
-/// because MSFS does not either.
+/// It knows no panel by name; everything comes from the <see cref="PanelSetup"/>. It starts
+/// with the modules' demo values (anything without one starts at the bottom of its grid, a
+/// watch at 0). A page's swap event exchanges its two fields. Writes read back after a short
+/// latency, as the 2026-09 spikes saw MSFS 2024 do, and are not policed against the grid,
+/// because MSFS does not either. Anything else the sim does by itself, such as COM snapping to
+/// 25 kHz when the spacing switch flips, the caller adds with <see cref="On"/>.
 /// </summary>
 public sealed class FakeParameterGateway : ISimParameterGateway
 {
-    private static readonly ParameterId ComStandby = new("com1.standby");
-    private static readonly ParameterId ComActive = new("com1.active");
-    private static readonly ParameterId ComSpacing = new("com1.spacing");
-    private static readonly ParameterId Com2Standby = new("com2.standby");
-    private static readonly ParameterId Com2Active = new("com2.active");
-    private static readonly ParameterId NavStandby = new("nav1.standby");
-    private static readonly ParameterId NavActive = new("nav1.active");
-
     private readonly Lock _gate = new();
+    private readonly Dictionary<string, Action> _events = new(StringComparer.Ordinal);
     private readonly Dictionary<ParameterId, int> _values;
     private readonly HashSet<ParameterId> _subscribed = [];
     private readonly Channel<ParameterSnapshot> _snapshots = Channel.CreateUnbounded<ParameterSnapshot>();
@@ -34,23 +28,32 @@ public sealed class FakeParameterGateway : ISimParameterGateway
     private readonly TimeProvider _time;
 
     /// <param name="latency">Write to read-back. Spike 0(a) measured 10-16 ms; just after flight load, up to ~590 ms.</param>
-    public FakeParameterGateway(TimeSpan? latency = null, TimeProvider? time = null)
+    public FakeParameterGateway(PanelSetup setup, TimeSpan? latency = null, TimeProvider? time = null)
     {
+        ArgumentNullException.ThrowIfNull(setup);
+
         Latency = latency ?? TimeSpan.FromMilliseconds(15);
         _time = time ?? TimeProvider.System;
 
-        // A C172 on the ground at a UK airport, after the handover (spec §5.3).
-        _values = new Dictionary<ParameterId, int>
+        _values = [];
+        foreach (ParameterDefinition parameter in setup.Registry.All)
         {
-            [ComActive] = 127_850,
-            [ComStandby] = 124_850,
-            [ComSpacing] = 0,
-            [Com2Active] = 121_500,
-            [Com2Standby] = 119_875,
-            [new ParameterId("com2.spacing")] = 0,
-            [NavActive] = 113_900,
-            [NavStandby] = 110_300,
-        };
+            _values[parameter.Id] = setup.DemoValues.TryGetValue(parameter.Id, out int value) ? value : parameter.Grid.Snap(0);
+        }
+
+        foreach (SimSubscription watch in setup.Registry.Watches)
+        {
+            _values[watch.Id] = setup.DemoValues.GetValueOrDefault(watch.Id);
+        }
+
+        foreach (PanelPage page in setup.Pages)
+        {
+            if (page.SwapEvent is { } swap)
+            {
+                (ParameterId a, ParameterId b) = (page.Fields[0], page.Fields[1]);
+                _events[swap] = () => Swap(a, b);
+            }
+        }
     }
 
     public TimeSpan Latency { get; set; }
@@ -99,52 +102,36 @@ public sealed class FakeParameterGateway : ISimParameterGateway
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Teaches the fake what the sim does on <paramref name="eventName"/>, replacing a page's
+    /// swap if it has the same name. The action runs after <see cref="Latency"/>, and should
+    /// change values through <see cref="SetFromCockpit"/>.
+    /// </summary>
+    public void On(string eventName, Action action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(eventName);
+        ArgumentNullException.ThrowIfNull(action);
+
+        lock (_gate)
+        {
+            _events[eventName] = action;
+        }
+    }
+
     private void Apply(string eventName)
     {
-        switch (eventName)
+        Action? action;
+        lock (_gate)
         {
-            case "COM_STBY_RADIO_SWAP" or "COM1_RADIO_SWAP":
-                Swap(ComStandby, ComActive);
-                break;
-
-            case "COM2_RADIO_SWAP":
-                Swap(Com2Standby, Com2Active);
-                break;
-
-            case "NAV1_RADIO_SWAP":
-                Swap(NavStandby, NavActive);
-                break;
-
-            case "COM_1_SPACING_MODE_SWITCH":
-                ToggleSpacing();
-                break;
-
-            default:
-                // An event this fake does not model: accepted and ignored, as the sim would.
-                break;
+            // An event this fake does not model is accepted and ignored, as the sim would.
+            _events.TryGetValue(eventName, out action);
         }
+
+        action?.Invoke();
     }
 
     /// <summary>A change made in the cockpit rather than by us: the pilot's own knob, ATC, the aircraft.</summary>
     public void SetFromCockpit(ParameterId id, int canonicalValue) => Set(id, canonicalValue);
-
-    /// <summary>The cockpit spacing switch.</summary>
-    public void ToggleSpacing()
-    {
-        lock (_gate)
-        {
-            int mode = _values[ComSpacing] == 0 ? 1 : 0;
-            SetLocked(ComSpacing, mode);
-
-            if (mode == 0)
-            {
-                // Verified in all three aircraft: 118.505 → 118.500, 119.005 → 119.000.
-                ComChannelGrid grid = new(ChannelSpacing.TwentyFiveKhz);
-                SetLocked(ComActive, grid.Snap(_values[ComActive]));
-                SetLocked(ComStandby, grid.Snap(_values[ComStandby]));
-            }
-        }
-    }
 
     // Fire and forget on purpose: the sim applies the change on its own time, and the caller
     // learns of it from the snapshot, exactly as with SimConnect.

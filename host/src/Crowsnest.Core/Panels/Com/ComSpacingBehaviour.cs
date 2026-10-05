@@ -11,8 +11,9 @@ namespace Crowsnest.Core.Panels.Com;
 ///
 /// The two are one object because the grid's JSON says what it follows: a grid with
 /// <c>"spacingFrom": "com1.spacing"</c> is rebuilt whenever the watch <c>com1.spacing</c>
-/// reports. So use one instance per registry load: read the JSON with <see cref="GridFactory"/>,
-/// then <see cref="Validate"/> the registry, then hand the instance to the engine.
+/// reports. So use one instance per registry load: <see cref="ComPanelModule"/> creates one in
+/// each <c>Configure</c>, and the composer reads the JSON with <see cref="GridFactory"/>, then
+/// calls <see cref="Validate"/> on the finished registry.
 /// </summary>
 public sealed class ComSpacingBehaviour : IPanelBehaviour
 {

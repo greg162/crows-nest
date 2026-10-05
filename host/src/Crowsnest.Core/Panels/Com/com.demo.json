@@ -1,0 +1,7 @@
+// What the fake sim starts with (spec §7.3), for the device simulator's demo. A C172 on the
+// ground at a UK airport, after the handover (spec §5.3). Anything left out starts at the
+// bottom of its grid, or 0 for a watch.
+{
+  "com1.active": 127850, "com1.standby": 124850, "com1.spacing": 0,
+  "com2.active": 121500, "com2.standby": 119875, "com2.spacing": 0
+}

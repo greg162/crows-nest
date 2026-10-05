@@ -2,8 +2,6 @@ using System.Text;
 using Crowsnest.Core.Application;
 using Crowsnest.Core.Domain;
 using Crowsnest.Core.Domain.Grids;
-using Crowsnest.Core.Panels;
-using Crowsnest.Core.Panels.Com;
 
 namespace Crowsnest.Core.Tests.Application;
 
@@ -20,8 +18,10 @@ public class ParameterJsonReaderTests
         }
         """;
 
+    private static readonly ParameterJsonReader Reader = new(StandardGrids.Factories, StandardFormatters.All);
+
     private static IReadOnlyList<ParameterDefinition> Read(string json) =>
-        DefaultParameters.CreateReader(new ComSpacingBehaviour()).Read(new MemoryStream(Encoding.UTF8.GetBytes(json))).Parameters;
+        Reader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json))).Parameters;
 
     /// <summary>The heading entry with one fragment replaced, expecting the read to fail naming <paramref name="expected"/>.</summary>
     private static void AssertRejected(string find, string replace, string expected)
@@ -111,7 +111,7 @@ public class ParameterJsonReaderTests
         Assert.Throws<InvalidDataException>(() => Read(json));
 
     private static ParameterFile ReadFile(string json) =>
-        DefaultParameters.CreateReader(new ComSpacingBehaviour()).Read(new MemoryStream(Encoding.UTF8.GetBytes(json)));
+        Reader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)));
 
     [Fact]
     public void AWatchEntryIsReadWithOnlyAnIdAndABinding()

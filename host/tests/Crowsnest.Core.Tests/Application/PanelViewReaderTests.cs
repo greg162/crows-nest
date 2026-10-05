@@ -67,7 +67,7 @@ public class PanelViewReaderTests
     [Fact]
     public void TheShippedViewsShowComOneThenComTwo()
     {
-        IReadOnlyList<PanelPage> pages = DefaultParameters.Load().Pages;
+        IReadOnlyList<PanelPage> pages = PanelCatalog.Load().Pages;
 
         Assert.Equal(["com1", "com2"], pages.Select(p => p.Id));
         Assert.All(pages, p => Assert.Equal(PageLayout.ActiveStandbyPair, p.Layout));

@@ -28,7 +28,7 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
     public SimConnectParameterGatewayTests()
     {
         _gateway = new SimConnectParameterGateway(
-            DefaultParameters.Load().Registry,
+            PanelCatalog.Load().Registry,
             () =>
             {
                 FakeSimConnectClient client = _next.Count > 0 ? _next.Dequeue() : new FakeSimConnectClient();
@@ -44,7 +44,7 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
     private async Task StartAsync()
     {
         _gateway.ConnectionState.Subscribe(new Recorder(_states));
-        await _gateway.SubscribeAsync(DefaultParameters.Load().Registry.Subscriptions, CancellationToken.None);
+        await _gateway.SubscribeAsync(PanelCatalog.Load().Registry.Subscriptions, CancellationToken.None);
         _run = _gateway.RunAsync(_stop.Token);
         _reader = Task.Run(async () =>
         {
@@ -193,12 +193,12 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
         _snapshots.Clear();
 
         // The bridge restarting: a new coordinator subscribes to what is already watched.
-        await _gateway.SubscribeAsync(DefaultParameters.Load().Registry.Subscriptions, CancellationToken.None);
+        await _gateway.SubscribeAsync(PanelCatalog.Load().Registry.Subscriptions, CancellationToken.None);
         await Advance(TimeSpan.FromMilliseconds(200));
 
         await Eventually(() => _snapshots.Contains(new ParameterSnapshot(ComStandby, 124_850)), "the values again");
         Assert.Contains(new ParameterSnapshot(ComActive, 127_850), _snapshots);
-        Assert.Equal(1 + DefaultParameters.Load().Registry.Subscriptions.Count, Client.Watches.Count); // the camera, then no duplicates
+        Assert.Equal(1 + PanelCatalog.Load().Registry.Subscriptions.Count, Client.Watches.Count); // the camera, then no duplicates
     }
 
     [Fact]

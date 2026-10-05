@@ -9,7 +9,7 @@ namespace Crowsnest.Core.Tests.Application;
 /// <summary>The spec §11 registry row: every shipped entry loads and holds together.</summary>
 public class ParameterRegistryTests
 {
-    private static readonly ParameterRegistry Registry = DefaultParameters.Load().Registry;
+    private static readonly ParameterRegistry Registry = PanelCatalog.Load().Registry;
 
     public static TheoryData<string> ShippedIds => [.. Registry.All.Select(p => p.Id.Key)];
 

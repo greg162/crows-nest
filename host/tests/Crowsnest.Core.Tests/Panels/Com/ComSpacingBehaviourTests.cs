@@ -25,7 +25,7 @@ public class ComSpacingBehaviourTests
     /// <summary>The shipped panel with the sim reporting 121.500 / 118.000, cursor on kHz.</summary>
     private PanelEngine Tuned()
     {
-        PanelSetup setup = DefaultParameters.Load();
+        PanelSetup setup = PanelCatalog.Load();
         PanelEngine engine = new(setup.Registry, setup.Pages, DefaultInputActionMap.Instance, TuningOptions.Default, setup.Behaviours);
         engine.Join(P);
         engine.OnSnapshot(new ParameterSnapshot(Standby, 121_500));
@@ -128,10 +128,9 @@ public class ComSpacingBehaviourTests
                "write": { "mode": "keyEvent", "target": "COM_STBY_RADIO_SET_HZ", "encoding": "hz" },
                "format": "freq3" }]
             """;
-        ComSpacingBehaviour spacing = new();
-        ParameterFile file = DefaultParameters.CreateReader(spacing).Read(new MemoryStream(Encoding.UTF8.GetBytes(json)));
+        PanelFile file = new("com.parameters.json", () => new MemoryStream(Encoding.UTF8.GetBytes(json)));
 
-        InvalidDataException e = Assert.Throws<InvalidDataException>(() => spacing.Validate(new ParameterRegistry(file.Parameters, file.Watches)));
+        InvalidDataException e = Assert.Throws<InvalidDataException>(() => PanelComposer.Compose([new ComPanelModule()], _ => [file]));
 
         Assert.Contains("com1.spacnig", e.Message, StringComparison.Ordinal);
     }

@@ -6,6 +6,7 @@ using Crowsnest.Core.Application.Ports;
 using Crowsnest.Core.Domain;
 using Crowsnest.Core.Domain.Tuning;
 using Crowsnest.Core.Panels;
+using Crowsnest.Core.Panels.Com;
 using Crowsnest.Device;
 using Crowsnest.Device.Protocol;
 using Crowsnest.Device.Transport;
@@ -30,6 +31,7 @@ internal sealed class Demo : IAsyncDisposable
     private const string EraseToEndOfLine = Esc + "[K";
     private static readonly ParameterId ComStandby = new("com1.standby");
     private static readonly ParameterId ComActive = new("com1.active");
+    private static readonly ParameterId ComSpacing = new("com1.spacing");
 
     private readonly CancellationTokenSource _stop = new();
     private readonly SimulatedDevice _simulated;
@@ -49,7 +51,7 @@ internal sealed class Demo : IAsyncDisposable
         _simulated = new SimulatedDevice(deviceEnd);
         _device = new DeviceConnection(hostEnd);
 
-        Setup = DefaultParameters.Load();
+        Setup = PanelCatalog.Load();
         if (msfs)
         {
             _msfs = new SimConnectParameterGateway(Setup.Registry, () => new ManagedSimConnectClient(), new NoteLogger(this));
@@ -58,7 +60,9 @@ internal sealed class Demo : IAsyncDisposable
         }
         else
         {
-            Fake = new FakeParameterGateway();
+            FakeParameterGateway fake = new(Setup);
+            fake.On("COM_1_SPACING_MODE_SWITCH", () => ToggleComSpacing(fake));
+            Fake = fake;
             _sim = Fake;
             _logLines = 6;
         }
@@ -115,7 +119,7 @@ internal sealed class Demo : IAsyncDisposable
                     await demo._simulated.TapAsync(240, 240);
                     break;
                 case ConsoleKey.S when demo.Fake is { } fake:
-                    fake.ToggleSpacing();
+                    ToggleComSpacing(fake);
                     demo.Note("cockpit: spacing switch");
                     break;
                 case ConsoleKey.S:
@@ -160,13 +164,13 @@ internal sealed class Demo : IAsyncDisposable
         await Step("tap: swap", () => demo._simulated.TapAsync(240, 240).AsTask());
         await Step("cockpit spacing switch to 8.33, then turn +1", async () =>
         {
-            fake.ToggleSpacing();
+            ToggleComSpacing(fake);
             await Task.Delay(100);
             await demo._simulated.TurnEncoderAsync(1);
         }, 400);
         await Step("cockpit spacing switch back to 25 kHz: the sim snaps", () =>
         {
-            fake.ToggleSpacing();
+            ToggleComSpacing(fake);
             return Task.CompletedTask;
         }, 300);
         await Step("the sim stops accepting writes; turn +1 and wait out the settle timeout", async () =>
@@ -180,6 +184,23 @@ internal sealed class Demo : IAsyncDisposable
             fake.SetFromCockpit(ComStandby, 121_500);
             return Task.CompletedTask;
         });
+    }
+
+    /// <summary>
+    /// The cockpit's COM 1 spacing switch in the fake sim. Going back to 25 kHz snaps both COM 1
+    /// values, as all three aircraft in the matrix did: 118.505 → 118.500, 119.005 → 119.000.
+    /// </summary>
+    private static void ToggleComSpacing(FakeParameterGateway fake)
+    {
+        int mode = fake.Value(ComSpacing) == 0 ? 1 : 0;
+        fake.SetFromCockpit(ComSpacing, mode);
+
+        if (mode == 0)
+        {
+            ComChannelGrid grid = new(ChannelSpacing.TwentyFiveKhz);
+            fake.SetFromCockpit(ComActive, grid.Snap(fake.Value(ComActive)));
+            fake.SetFromCockpit(ComStandby, grid.Snap(fake.Value(ComStandby)));
+        }
     }
 
     private static async Task<Demo> StartAsync(bool msfs)
@@ -238,7 +259,7 @@ internal sealed class Demo : IAsyncDisposable
 
             if (Fake is { } fake)
             {
-                string spacing = fake.Value(new ParameterId("com1.spacing")) == 1 ? "8.33" : "25";
+                string spacing = fake.Value(ComSpacing) == 1 ? "8.33" : "25";
                 screen.AppendLine(string.Create(
                     CultureInfo.InvariantCulture,
                     $"    in the sim: COM 1 {Mhz(fake.Value(ComActive))} / stby {Mhz(fake.Value(ComStandby))}, {spacing} kHz{(fake.IgnoreWrites ? ", IGNORING WRITES" : "")}"));

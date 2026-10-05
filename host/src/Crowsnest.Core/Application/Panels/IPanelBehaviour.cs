@@ -16,6 +16,15 @@ public interface IPanelBehaviour
 {
     /// <summary>Sees every sim snapshot, before the parameter's own session does.</summary>
     void OnSnapshot(ParameterSnapshot snapshot, IPanelContext context);
+
+    /// <summary>
+    /// Checks the behaviour against the finished registry, so a bad reference in the JSON fails
+    /// at startup. Called once, after every module has loaded.
+    /// </summary>
+    /// <exception cref="InvalidDataException">Something the behaviour depends on is missing.</exception>
+    void Validate(ParameterRegistry registry)
+    {
+    }
 }
 
 /// <summary>What a behaviour may change.</summary>
@@ -29,6 +38,3 @@ public interface IPanelContext
     /// </summary>
     void ReplaceGrid(ParameterId id, IValueGrid grid);
 }
-
-/// <summary>What the host runs: the registry, the pages and any behaviours, built together.</summary>
-public sealed record PanelSetup(ParameterRegistry Registry, IReadOnlyList<PanelPage> Pages, IReadOnlyList<IPanelBehaviour> Behaviours);

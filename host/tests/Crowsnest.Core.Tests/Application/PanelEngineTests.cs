@@ -30,7 +30,7 @@ public class PanelEngineTests
     private static PanelEngine NewEngine(TuningOptions? options = null)
     {
         // COM 1 and a NAV page: two pages, whatever else the shipped views add.
-        PanelSetup setup = DefaultParameters.Load();
+        PanelSetup setup = PanelCatalog.Load();
         PanelEngine engine = new(setup.Registry, [setup.Pages.Single(p => p.Id == "com1"), NavPage], DefaultInputActionMap.Instance, options ?? TuningOptions.Default, setup.Behaviours);
         engine.Join(P);
         return engine;
@@ -239,7 +239,7 @@ public class PanelEngineTests
     public void TapOnAPageWithNoSwapEventOnlyAcknowledges()
     {
         PanelPage single = new("stby", "STBY", PageLayout.SingleValue, [ComStandby]);
-        PanelEngine engine = new(DefaultParameters.Load().Registry, [single], DefaultInputActionMap.Instance, TuningOptions.Default);
+        PanelEngine engine = new(PanelCatalog.Load().Registry, [single], DefaultInputActionMap.Instance, TuningOptions.Default);
         engine.Join(P);
 
         PanelEffects tapped = engine.OnInput(P, Tap(), At(0));
@@ -342,7 +342,7 @@ public class PanelEngineTests
     [Fact]
     public void PagesMustShowRegisteredParametersInOneToThreeFields()
     {
-        ParameterRegistry registry = DefaultParameters.Load().Registry;
+        ParameterRegistry registry = PanelCatalog.Load().Registry;
         PanelPage unknown = new("x", "X", PageLayout.SingleValue, [new ParameterId("com9.standby")]);
         PanelPage empty = new("y", "Y", PageLayout.SingleValue, []);
         PanelPage crowded = new("z", "Z", PageLayout.DualValue, [ComStandby, ComActive, NavStandby, NavActive]);
