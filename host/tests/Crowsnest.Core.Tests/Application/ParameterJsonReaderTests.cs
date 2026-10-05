@@ -9,7 +9,7 @@ public class ParameterJsonReaderTests
 {
     private const string Heading = """
         {
-          "id": "ap.heading", "label": "HEADING", "group": "ap.hdg", "unit": "deg",
+          "id": "ap.heading", "label": "HEADING", "unit": "deg",
           "grid":    { "type": "wrapping", "min": 0, "max": 359, "step": 1 },
           "cursors": [ { "name": "tens", "step": 10, "span": "0..2" }, { "name": "ones", "step": 1, "span": "2..3" } ],
           "read":    { "source": "simvar", "name": "AUTOPILOT HEADING LOCK DIR", "unit": "degrees" },
@@ -61,7 +61,7 @@ public class ParameterJsonReaderTests
     public void FromEndSpansAreRead()
     {
         string altitude = """
-            [{ "id": "ap.altitude", "label": "ALTITUDE", "group": "ap.alt", "unit": "ft",
+            [{ "id": "ap.altitude", "label": "ALTITUDE", "unit": "ft",
                "grid": { "type": "linear", "min": 0, "max": 50000, "step": 100 },
                "cursors": [ { "name": "coarse", "step": 1000, "span": "..^4" }, { "name": "fine", "step": 100, "span": "^3..^2" } ],
                "read": { "source": "simvar", "name": "AUTOPILOT ALTITUDE LOCK VAR", "unit": "feet" },
@@ -94,6 +94,10 @@ public class ParameterJsonReaderTests
         AssertRejected(find, replace, "Parameter 'ap.heading'");
         AssertRejected(find, replace, expected);
     }
+
+    [Fact]
+    public void AFieldTheReaderDoesNotKnowIsReported() =>
+        AssertRejected("\"unit\": \"deg\",", "\"unit\": \"deg\", \"fromat\": \"deg3\",", "$[0].fromat: that is not a field an entry has");
 
     [Fact]
     public void AnEntryWithNoIdIsReportedByPosition()

@@ -121,7 +121,7 @@ public class ComSpacingBehaviourTests
     public void AGridFollowingAWatchThatDoesNotExistFailsAtStartup()
     {
         const string json = """
-            [{ "id": "com1.standby", "label": "COM 1 STBY", "group": "com1", "unit": "kHz",
+            [{ "id": "com1.standby", "label": "COM 1 STBY", "unit": "kHz",
                "grid": { "type": "comChannel", "spacingFrom": "com1.spacnig" },
                "cursors": [ { "name": "khz", "step": 1, "span": "4..7" } ],
                "read": { "source": "simvar", "name": "COM STANDBY FREQUENCY:1", "unit": "Hz", "scale": 0.001 },

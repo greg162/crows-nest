@@ -8,7 +8,7 @@ namespace Crowsnest.Core.Application;
 /// Reads registry entries from JSON (spec §5.2): an array of objects shaped like
 ///
 /// <code>
-/// { "id": "nav1.standby", "label": "NAV 1 STBY", "group": "nav1", "unit": "kHz",
+/// { "id": "nav1.standby", "label": "NAV 1 STBY", "unit": "kHz",
 ///   "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
 ///   "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp", "span": "0..3" }, ... ],
 ///   "read":    { "source": "simvar", "name": "NAV STANDBY FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
@@ -19,7 +19,8 @@ namespace Crowsnest.Core.Application;
 /// An entry with <c>"kind": "watch"</c> is a value read from the sim but never tuned, for a
 /// panel behaviour to follow (<c>com1.spacing</c>); it has only <c>id</c> and <c>read</c>.
 ///
-/// Every field of a parameter is required except <c>cursors[].wrap</c> (default <c>carry</c>, which every grid
+/// A field the reader does not know is an error, so a typo (<c>"fromat"</c>) is reported rather
+/// than ignored. Every field of a parameter is required except <c>cursors[].wrap</c> (default <c>carry</c>, which every grid
 /// accepts) and <c>read.scale</c> (default 1). Comments and trailing commas are allowed. Enum
 /// values are case-insensitive. Anything wrong throws <see cref="InvalidDataException"/> naming
 /// the entry and the field, so a bad entry fails at startup and in the registry test rather than
@@ -32,6 +33,7 @@ public sealed class ParameterJsonReader
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
+        UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
     };
 
     private static readonly Dictionary<string, CanonicalUnit> Units = new(StringComparer.OrdinalIgnoreCase)
@@ -68,7 +70,10 @@ public sealed class ParameterJsonReader
         }
         catch (JsonException e)
         {
-            throw new InvalidDataException($"Parameter JSON is malformed: {e.Message}", e);
+            // Name the place in the file, not the class it failed to fill.
+            string where = string.IsNullOrEmpty(e.Path) ? "" : $" at {e.Path}";
+            string why = e.Message.Contains("could not be mapped", StringComparison.Ordinal) ? "that is not a field an entry has" : e.Message;
+            throw new InvalidDataException($"Parameter JSON is malformed{where}: {why}", e);
         }
 
         if (entries is null)
@@ -223,13 +228,13 @@ public sealed class ParameterJsonReader
             ? fm
             : throw Invalid($"no formatter \"{entry.Format}\" is registered");
 
-        return new ParameterDefinition(id, Require(entry.Label, "label"), Require(entry.Group, "group"), unit, grid, cursors, read, write, formatter);
+        return new ParameterDefinition(id, Require(entry.Label, "label"), unit, grid, cursors, read, write, formatter);
     }
 
     // Deserialisation targets. Everything nullable so a missing field becomes a named error
     // rather than a default value.
     private sealed record EntryDto(
-        string? Kind, string? Id, string? Label, string? Group, string? Unit, JsonElement? Grid,
+        string? Kind, string? Id, string? Label, string? Unit, JsonElement? Grid,
         CursorDto[]? Cursors, ReadDto? Read, WriteDto? Write, string? Format);
 
     private sealed record CursorDto(string? Name, int? Step, string? Wrap, string? Span);

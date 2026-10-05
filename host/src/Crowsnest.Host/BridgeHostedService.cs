@@ -98,7 +98,7 @@ public sealed partial class BridgeHostedService(
                     held.Remove(port);
                 }
 
-                IReadOnlyList<DeviceCandidate> candidates = [.. DeviceDiscovery.Enumerate().Where(c => c.MatchesKnownBoard)];
+                IReadOnlyList<DeviceCandidate> candidates = [.. DeviceDiscovery.Enumerate()];
                 refused.IntersectWith(candidates.Select(c => c.PortName)); // unplugged: complain afresh next time
 
                 foreach (DeviceCandidate candidate in candidates.Where(c => !held.ContainsKey(c.PortName)))
@@ -112,7 +112,7 @@ public sealed partial class BridgeHostedService(
 
                 if (held.Count == 0 && !announcedSearching)
                 {
-                    LogSearching(log, DeviceDiscovery.KnownBoardHardwareId);
+                    LogSearching(log, string.Join(", ", DeviceDiscovery.KnownBoardHardwareIds));
                 }
 
                 announcedSearching = held.Count == 0;

@@ -12,7 +12,6 @@ public sealed record ParameterDefinition
     public ParameterDefinition(
         ParameterId id,
         string label,
-        string groupId,
         CanonicalUnit unit,
         IValueGrid grid,
         IReadOnlyList<CursorLevel> cursors,
@@ -21,7 +20,6 @@ public sealed record ParameterDefinition
         IValueFormatter formatter)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
         ArgumentNullException.ThrowIfNull(grid);
         ArgumentNullException.ThrowIfNull(cursors);
         ArgumentNullException.ThrowIfNull(read);
@@ -35,7 +33,6 @@ public sealed record ParameterDefinition
 
         Id = id;
         Label = label;
-        GroupId = groupId;
         Unit = unit;
         Grid = grid;
         Cursors = cursors;
@@ -48,9 +45,6 @@ public sealed record ParameterDefinition
 
     /// <summary>What the device shows above the value: <c>"COM 1 STBY"</c>.</summary>
     public string Label { get; }
-
-    /// <summary>Binds an active/standby pair together: <c>"com1"</c>.</summary>
-    public string GroupId { get; }
 
     public CanonicalUnit Unit { get; }
 

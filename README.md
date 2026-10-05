@@ -47,12 +47,12 @@ host/                      the Windows side: Crowsnest.slnx, Directory.Build.pro
     Crowsnest.Device/        net10.0-windows  -> Core
     Crowsnest.Host/          net10.0-windows  -> Core, Sim, Device
   tools/
-    Crowsnest.DevConsole/         manual SimConnect harness (spike 0a)
-    Crowsnest.DeviceSimulator/    speaks the device protocol, no hardware needed
-    Crowsnest.LinkSpike/          THROWAWAY — USB CDC handshake + latency (spike 0c)
+    Crowsnest.DevConsole/         runs the host headless, until the tray app exists
+    Crowsnest.DeviceSimulator/    the host against a fake sim and a simulated device
   tests/
     Crowsnest.Core.Tests/    mirrors the Core folder structure exactly
     Crowsnest.Device.Tests/
+    Crowsnest.Sim.Tests/
 firmware/
   crowsnest-display/       ESP-IDF 6.1 + LVGL 9
 ```
@@ -72,9 +72,8 @@ The WiX v5 template pack is not installed (`dotnet new install WixToolset.Templa
 
 ## Status
 
-Phase 0 — spikes. Retired so far: SimConnect loads under .NET 10; ESP-IDF 6.1
-toolchain validated; the board enumerates as native USB-Serial/JTAG
-(`VID_303A&PID_1001`, MAC `a4:cb:8f:dc:cc:6c`).
-
-Outstanding: 0(a) live sim read/write, 0(c) USB CDC round-trip latency under
-20 ms, 0(d) ESP-BSP Generator lights the panel.
+Phases 0–3 are done: the host drives real CrowPanels against MSFS 2024 over SimConnect.
+COM 1, COM 2 and NAV 1 ship as panel modules (`host/src/Crowsnest.Core/Panels/`, see its
+README for adding one), and each board shows the panels assigned to it in
+`%LOCALAPPDATA%\Crowsnest\settings.json`. Next: the tray app and installer (phase 4).
+See `crowsnest-technical-spec.md` §13 for the phases.

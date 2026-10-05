@@ -66,7 +66,6 @@ public class ParameterRegistryTests
         ParameterDefinition standby = Registry[new ParameterId("com1.standby")];
 
         Assert.Equal("COM 1 STBY", standby.Label);
-        Assert.Equal("com1", standby.GroupId);
         Assert.Equal(CanonicalUnit.Kilohertz, standby.Unit);
         Assert.IsType<ComChannelGrid>(standby.Grid);
         Assert.Equal(ChannelSpacing.TwentyFiveKhz, ((ComChannelGrid)standby.Grid).Spacing); // the safe default until the SimVar says otherwise

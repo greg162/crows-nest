@@ -15,7 +15,6 @@ internal static class TestParameters
     public static ParameterDefinition Com1Standby(IReadOnlyList<CursorLevel>? cursors = null, IValueGrid? grid = null) => new(
         new ParameterId("com1.standby"),
         "COM 1 STBY",
-        "com1",
         CanonicalUnit.Kilohertz,
         grid ?? new ComChannelGrid(ChannelSpacing.TwentyFiveKhz),
         cursors ?? [Mhz, Khz],

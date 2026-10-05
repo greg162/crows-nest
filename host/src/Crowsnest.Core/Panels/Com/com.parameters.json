@@ -2,7 +2,7 @@
 // kHz value needs no floating-point MHz round trip.
 [
   {
-    "id": "com1.standby", "label": "COM 1 STBY", "group": "com1", "unit": "kHz",
+    "id": "com1.standby", "label": "COM 1 STBY", "unit": "kHz",
     "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com1.spacing" },
     "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
                  { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
@@ -12,7 +12,7 @@
   },
   {
     // COM 1 uses the unnumbered COM_RADIO_SET_HZ; there is no COM1_RADIO_SET_HZ.
-    "id": "com1.active", "label": "COM 1", "group": "com1", "unit": "kHz",
+    "id": "com1.active", "label": "COM 1", "unit": "kHz",
     "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com1.spacing" },
     "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
                  { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
@@ -31,7 +31,7 @@
   // COM 2: the same as COM 1 with the radio index changed. Unlike COM 1, its key events
   // carry the number.
   {
-    "id": "com2.standby", "label": "COM 2 STBY", "group": "com2", "unit": "kHz",
+    "id": "com2.standby", "label": "COM 2 STBY", "unit": "kHz",
     "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com2.spacing" },
     "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
                  { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
@@ -40,7 +40,7 @@
     "format":  "freq3"
   },
   {
-    "id": "com2.active", "label": "COM 2", "group": "com2", "unit": "kHz",
+    "id": "com2.active", "label": "COM 2", "unit": "kHz",
     "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com2.spacing" },
     "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
                  { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],

@@ -290,7 +290,7 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
         // Every shipped parameter writes by key event, so check through a registry of our own.
         ReadBinding read = new(ReadSource.SimVar, "AUTOPILOT ALTITUDE LOCK VAR", "feet", 1);
         Core.Domain.ParameterDefinition altitude = new(
-            new ParameterId("ap.altitude"), "ALT", "ap", CanonicalUnit.Feet,
+            new ParameterId("ap.altitude"), "ALT", CanonicalUnit.Feet,
             new Core.Domain.Grids.LinearGrid(0, 50_000, 100), [new CursorLevel("fine", 100, CursorWrap.Clamp, ..)],
             read, new WriteBinding(WriteMode.SimVarWrite, "AUTOPILOT ALTITUDE LOCK VAR", PayloadEncoding.Raw),
             new Core.Domain.Formatting.GroupedFormatter());

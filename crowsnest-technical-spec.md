@@ -266,7 +266,6 @@ This is the change that makes "extend rapidly" true. A parameter is described by
 public sealed record ParameterDefinition(
     ParameterId Id,
     string Label,                          // "COM 1 STBY"
-    string GroupId,                        // "com1" — binds an active/standby pair together
     CanonicalUnit Unit,
     IValueGrid Grid,
     IReadOnlyList<CursorLevel> Cursors,    // ordered coarse → fine
@@ -284,18 +283,12 @@ public sealed record WriteBinding(WriteMode Mode, string Target, PayloadEncoding
 public enum WriteMode        { KeyEvent, SimVarWrite, LVarWrite }
 public enum PayloadEncoding  { Hz, Bcd16, Raw, Signed }
 
-public sealed record ParameterGroup(
-    string Id, string Title,
-    ParameterId? Active, ParameterId? Standby,
-    string? SwapEvent);                    // null for parameters with no standby concept
-
 public sealed class ParameterRegistry
 {
     public static ParameterRegistry LoadDefault();          // embedded JSON resource
     public static ParameterRegistry FromJson(Stream json);  // user override, phase 6
 
     public ParameterDefinition this[ParameterId id] { get; }
-    public IReadOnlyList<ParameterGroup> Groups { get; }
     public IReadOnlyList<ReadBinding> AllReadBindings { get; }   // drives one bulk subscription
 }
 ```
@@ -309,7 +302,7 @@ public sealed class ParameterRegistry
 - **Each cursor is tried against its grid at load**, so a step or wrap mode the grid rejects (`clamp` on a heading) fails at startup with the entry and cursor named, not on the first detent. Every error is an `InvalidDataException` naming the entry and field.
 - **Frequencies are read in `Hz` with scale 0.001**, as spike 0(a) verified, rather than MHz × 1000: no floating-point MHz round trip.
 - **`comChannel` starts at 25 kHz.** `spacingFrom` is parsed but not yet acted on; until the spacing behaviour (§5.8) exists, 25 kHz is the safe grid, since every 25 kHz channel is legal under 8.33.
-- **The panel modules** (§5.8) bring the JSON files, grid factories and formatters together; `PanelCatalog.Load()` composes them. (Until 2026-10-04 a stand-in, `Panels/DefaultParameters`, did this.) `ParameterRegistry.Groups` is not built: swap events belong to pages, which the modules contribute.
+- **The panel modules** (§5.8) bring the JSON files, grid factories and formatters together; `PanelCatalog.Load()` composes them. (Until 2026-10-04 a stand-in, `Panels/DefaultParameters`, did this.) There is no `ParameterRegistry.Groups` and no `"group"` field (removed 2026-10-04, as nothing read it): an active/standby pair and its swap event are a page's business, and the modules contribute the pages.
 - **The §11 test** runs over every shipped entry: each cursor span fits the widest formatted value, each cursor steps onto the grid from both ends, and each placeholder is as wide as a value.
 
 **Spans may count from the end** (added 2026-09-27). A fixed-width value uses start indices (`4..7` in `"121.500"`, `0..2` in `"005"`). A value whose width varies — `"9,000"` vs `"12,000"` — uses C# from-end indices, so one span in the registry fits every width: `..^4` is the thousands and up, `^3..^2` the hundreds digit. `CursorSpans.Resolve` (`Domain/Formatting/`) turns either form into start-relative indices when a frame is built; the device only ever sees `[start, end)` from the start. A span that does not fit (`"500"` has no thousands) resolves to nothing and no underline is drawn.
@@ -320,7 +313,7 @@ public sealed class ParameterRegistry
 
 ```jsonc
 {
-  "id": "com1.standby", "label": "COM 1 STBY", "group": "com1", "unit": "kHz",
+  "id": "com1.standby", "label": "COM 1 STBY", "unit": "kHz",
   "grid":    { "type": "comChannel", "min": 118000, "max": 136990, "spacingFrom": "com1.spacing" },
   "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp", "span": "0..3" },
                { "name": "khz", "step": 1,    "wrap": "wrapWithinParent", "span": "4..7" } ],
@@ -332,7 +325,7 @@ public sealed class ParameterRegistry
 
 ```jsonc
 {
-  "id": "nav1.standby", "label": "NAV 1 STBY", "group": "nav1", "unit": "kHz",
+  "id": "nav1.standby", "label": "NAV 1 STBY", "unit": "kHz",
   "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
   "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp", "span": "0..3" },
                { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
@@ -344,7 +337,7 @@ public sealed class ParameterRegistry
 
 ```jsonc
 {
-  "id": "ap.altitude", "label": "ALTITUDE", "group": "ap.alt", "unit": "ft",
+  "id": "ap.altitude", "label": "ALTITUDE", "unit": "ft",
   "grid":    { "type": "linear", "min": 0, "max": 50000, "step": 100 },
   "cursors": [ { "name": "coarse", "step": 1000, "span": "..^4" }, { "name": "fine", "step": 100, "span": "^3..^2" } ],
   "read":    { "source": "simvar", "name": "AUTOPILOT ALTITUDE LOCK VAR", "unit": "feet" },
@@ -355,7 +348,7 @@ public sealed class ParameterRegistry
 
 ```jsonc
 {
-  "id": "ap.heading", "label": "HEADING", "group": "ap.hdg", "unit": "deg",
+  "id": "ap.heading", "label": "HEADING", "unit": "deg",
   "grid":    { "type": "wrapping", "min": 0, "max": 359, "step": 1 },
   "cursors": [ { "name": "tens", "step": 10, "span": "0..2" }, { "name": "ones", "step": 1, "span": "2..3" } ],
   "read":    { "source": "simvar", "name": "AUTOPILOT HEADING LOCK DIR", "unit": "degrees" },
@@ -766,7 +759,7 @@ public sealed class PanelComposer
 - **Changes from the sketch.** `Order` is gone: the catalog's list order is the page order. `PanelRequirements` and `AddInputOverride` wait for something to use them (capability filtering, below; the transponder). `AddGrid` takes a `GridFactory`, not an instance, and `AddBehaviour` takes an instance, not a type: `ComSpacingBehaviour` is both the `comChannel` factory and the behaviour, records followers while the JSON is read, and validates against the finished registry. `Configure` is called once per load and creates its state there, so each load gets its own behaviour. `AddParametersFromJson`/`AddPage`/`AddParameter` are replaced by the folder convention.
 - **`*.demo.json`** (optional) gives the values a pretend sim starts with, an object of id → value. `FakeParameterGateway` now takes the `PanelSetup` and knows no panel by name: it seeds from the demo values (else the bottom of the grid, 0 for a watch), and each page's `swapEvent` swaps its two fields. Anything else the sim does by itself is added by the caller with `fake.On(eventName, action)`. The device simulator adds COM's spacing switch, with its snap to 25 kHz, that way. No `ConfigureFake` on `IPanelModule`: Core cannot see `Crowsnest.Sim`, and it would put test scaffolding in production.
 - **Tests.** `PanelCatalogTests` fails if an `IPanelModule` is missing from the catalog, or if an embedded file under `Panels/` belongs to no registered module (both messages say what to add). It also loads each module on its own, which proves it does not lean on another, and checks that demo values are on their grids. `ArchitectureTests` reads the source (so uses inside method bodies count): `Domain/` and `Application/` never mention `Crowsnest.Core.Panels`; no `Panels/X` mentions `Panels.Y`; nothing else under `src/` mentions a panel family's namespace. `PanelComposerTests` covers the ownership rules.
-- **Still open:** `ParameterDefinition.GroupId` (JSON `"group"`) is read but nothing uses it; capability filtering (`PanelRequirements`, `PanelComposer` taking `DeviceCapabilities`); page assignment per device (§6.2).
+- **Still open:** capability filtering (`PanelRequirements`, `PanelComposer` taking `DeviceCapabilities`); page assignment per device (§6.2).
 
 ## 6. Crowsnest.Device
 
@@ -799,9 +792,9 @@ public sealed class HeartbeatMonitor;
 public sealed class DeviceReconnectPolicy;                  // exponential backoff + jitter
 ```
 
-**Discovery.** `SerialPort.GetPortNames()` gives no VID/PID, so use a CIM/WMI query over `Win32_PnPEntity` to enumerate ports with hardware IDs. Filter to the board's USB descriptor, then probe by writing a `hello` frame and waiting 500 ms for a reply. Cache the last-good port in settings and try it first. Because the protocol identifies the device in its `hello` response, probing works for any supported board without a per-board VID/PID table.
+**Discovery.** `SerialPort.GetPortNames()` gives no VID/PID, so use a CIM/WMI query over `Win32_PnPEntity` to enumerate ports with hardware IDs. Filter to the known boards' USB ids, then probe by writing a `hello` frame and waiting 500 ms for a reply. **Only ports with a known board's id are probed** (decided 2026-10-04): sending a hello to someone else's serial device, a GPS or a flight controller, is rude and can upset it. The `hello` still identifies the device, so the id list only decides which ports are worth asking.
 
-> **Resolved during the hardware spike — see F4 in §9.6.** The board does *not* use a CH34x bridge. It exposes the ESP32-S3's native USB-Serial/JTAG peripheral and enumerates as `VID_303A&PID_1001`. Filter on that. Baud rate is meaningless over a virtual CDC port, so `SerialPortTransport` may set any value. Retain the probe-every-candidate-port fallback regardless: it is what makes discovery work for board ports that *do* use a bridge.
+> **Resolved during the hardware spike — see F4 in §9.6.** The board does *not* use a CH34x bridge. It exposes the ESP32-S3's native USB-Serial/JTAG peripheral and enumerates as `VID_303A&PID_1001`. Filter on that. Baud rate is meaningless over a virtual CDC port, so `SerialPortTransport` may set any value. A board that does sit behind a bridge adds the bridge's id to `DeviceDiscovery.KnownBoardHardwareIds` (phase 7); there is no probe-every-port fallback.
 
 ### 6.1 Wire protocol
 
@@ -1402,6 +1395,8 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 - **Tap should swap** — the host already maps it (§5.7). **Implemented and verified 2026-09-29** (fw 0.2.0): `bsp_touch_init`/`bsp_touch_read` poll the CST8xx at 0x15 through the one I2C mutex (esp-bsp's `esp_lcd_touch` drivers open their own I2C IO and would bypass it), resetting it via expander P0 and disabling a CST816's auto-sleep. `app_main` sends `tap` on lift for a touch under 400 ms that moved under 40 px. `has_touch` in the hello is true only if the controller answered, and a panel without one says so in a `warn` log the host now shows.
 
 Phase 0 exists because all four of the project's real unknowns are in it. Phase 5 is deliberately positioned as a **test of the architecture** rather than just a feature: if adding NAV 1 is not nearly free, that is worth knowing before the autopilot work starts.
+
+The phase-0 spike tools (`Crowsnest.SimSpike`, `Crowsnest.LinkSpike`) and the device simulator's `--selftest` were deleted on 2026-10-04, their questions answered; the results below are their record.
 
 **0(a) — passed 2026-09-24.** `Crowsnest.SimSpike` against MSFS 2024 (`SunRise 12.2 build 282174.999`, SimConnect 12.2), default GA aircraft on the ground, using the SDK's managed wrapper under .NET 10. `COM ACTIVE FREQUENCY:1` / `COM STANDBY FREQUENCY:1` read as `Hz` / `FLOAT64` via `RequestDataOnSimObject` at `VISUAL_FRAME` with `CHANGED`; `COM_STBY_RADIO_SET_HZ` written with `TransmitClientEvent` at highest group priority. **Write to read-back: 9.8 ms and 16.3 ms** (write, then restore) — about one visual frame, so the pending/confirmed window in `TuningSession` will be short in practice. Cockpit knob turns arrive as individual change notifications at 25 kHz steps. The console loop works with an `EventWaitHandle` and no window handle, so `Crowsnest.Sim` needs no hidden message window. `COM_STBY_RADIO_SWAP` also verified: active and standby exchange in a single change notification, and a manual standby write read back in 12.0 ms. Not yet exercised: 8.33 kHz spacing and a study-level aircraft.
 

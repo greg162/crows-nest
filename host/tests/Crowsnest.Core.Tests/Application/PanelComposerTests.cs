@@ -30,7 +30,7 @@ public class PanelComposerTests
     }
 
     private static string Parameter(string id, string grid = """{ "type": "linear", "min": 0, "max": 100, "step": 1 }""", string format = "deg3") => $$"""
-        { "id": "{{id}}", "label": "X", "group": "x", "unit": "deg", "grid": {{grid}},
+        { "id": "{{id}}", "label": "X", "unit": "deg", "grid": {{grid}},
           "cursors": [ { "name": "ones", "step": 1, "span": "0..3" } ],
           "read": { "source": "simvar", "name": "X", "unit": "degrees" },
           "write": { "mode": "keyEvent", "target": "X_SET", "encoding": "raw" },

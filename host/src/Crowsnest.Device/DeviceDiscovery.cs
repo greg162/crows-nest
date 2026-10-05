@@ -3,26 +3,26 @@ using System.Text.RegularExpressions;
 
 namespace Crowsnest.Device;
 
-/// <summary>One candidate serial port, with enough detail to explain why it was picked.</summary>
-public sealed record DeviceCandidate(string PortName, string Description, string HardwareId, bool MatchesKnownBoard);
+/// <summary>One serial port that looks like one of our boards.</summary>
+public sealed record DeviceCandidate(string PortName, string Description, string HardwareId);
 
 /// <summary>
-/// Finds devices (spec §6). SerialPort.GetPortNames() gives no VID/PID, so the hardware ID
-/// comes from a CIM query over Win32_PnPEntity.
+/// Finds the serial ports that look like our boards (spec §6), by USB id. SerialPort.GetPortNames()
+/// gives no VID/PID, so the ids come from a CIM query over Win32_PnPEntity.
 ///
-/// The VID/PID filter only ranks candidates — it never excludes one. A board port on other
-/// hardware may sit behind a CP210x or CH34x bridge with an entirely different descriptor,
-/// and the protocol identifies the device in its hello reply anyway.
+/// Only those ports are probed: opening someone else's serial device, a GPS or a flight
+/// controller, to send it a hello is rude and can upset it. A board that sits behind a USB
+/// bridge (CP210x, CH34x) adds the bridge's id to <see cref="KnownBoardHardwareIds"/>.
 /// </summary>
 public static partial class DeviceDiscovery
 {
     /// <summary>ESP32-S3 native USB-Serial/JTAG, confirmed on the reference device (spec §9.6 F4).</summary>
-    public const string KnownBoardHardwareId = "VID_303A&PID_1001";
+    public static IReadOnlyList<string> KnownBoardHardwareIds { get; } = ["VID_303A&PID_1001"];
 
     [GeneratedRegex(@"\((?<port>COM\d+)\)", RegexOptions.ExplicitCapture)]
     private static partial Regex PortNameInDescription { get; }
 
-    /// <summary>Known boards first, then everything else, so probing tries the likely port first.</summary>
+    /// <summary>The ports whose USB id is a known board's, by port name.</summary>
     public static IReadOnlyList<DeviceCandidate> Enumerate()
     {
         List<DeviceCandidate> candidates = [];
@@ -45,24 +45,14 @@ public static partial class DeviceDiscovery
                         continue;
                     }
 
-                    candidates.Add(new DeviceCandidate(
-                        PortName: match.Groups["port"].Value,
-                        Description: name,
-                        HardwareId: hardwareId,
-                        MatchesKnownBoard: hardwareId.Contains(KnownBoardHardwareId, StringComparison.OrdinalIgnoreCase)));
+                    if (KnownBoardHardwareIds.Any(id => hardwareId.Contains(id, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        candidates.Add(new DeviceCandidate(match.Groups["port"].Value, name, hardwareId));
+                    }
                 }
             }
         }
 
-        // Any port CIM did not describe still deserves a probe.
-        foreach (string port in System.IO.Ports.SerialPort.GetPortNames())
-        {
-            if (!candidates.Any(c => string.Equals(c.PortName, port, StringComparison.OrdinalIgnoreCase)))
-            {
-                candidates.Add(new DeviceCandidate(port, port, string.Empty, MatchesKnownBoard: false));
-            }
-        }
-
-        return [.. candidates.OrderByDescending(c => c.MatchesKnownBoard).ThenBy(c => c.PortName, StringComparer.OrdinalIgnoreCase)];
+        return [.. candidates.OrderBy(c => c.PortName, StringComparer.OrdinalIgnoreCase)];
     }
 }
