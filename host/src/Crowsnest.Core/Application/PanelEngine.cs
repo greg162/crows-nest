@@ -399,7 +399,7 @@ public sealed class PanelEngine : IPanelContext
         ++view.Revision,
         _sim,
         new PageDescriptor(UnassignedPageId, "NOT ASSIGNED", PageLayout.SingleValue, Index: 0, Count: 1),
-        [new FieldDescriptor(FieldRole.Primary, "ADD TO SETTINGS", view.Id.Length > 6 ? view.Id[^6..] : view.Id)],
+        [new FieldDescriptor(FieldRole.Primary, "ADD TO SETTINGS", DeviceIdentity.ShortIdOf(view.Id))],
         Notice: null,
         AckSequence: view.AckSequence);
 

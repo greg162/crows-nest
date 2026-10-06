@@ -56,7 +56,17 @@ public sealed record DeviceCapabilities(
 public sealed record DeviceIdentity(
     string HardwareId,
     string DeviceType,
-    string FirmwareVersion);
+    string FirmwareVersion)
+{
+    /// <summary>The last six characters of the hardware id: what the device's screen shows and settings accept.</summary>
+    public string ShortId => ShortIdOf(HardwareId);
+
+    public static string ShortIdOf(string hardwareId)
+    {
+        ArgumentNullException.ThrowIfNull(hardwareId);
+        return hardwareId.Length > 6 ? hardwareId[^6..] : hardwareId;
+    }
+}
 
 public abstract record DeviceInputEvent(long Sequence, DateTimeOffset At)
 {

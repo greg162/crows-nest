@@ -7,7 +7,15 @@ using Microsoft.Extensions.Hosting;
 //   dotnet run --project tools/Crowsnest.DevConsole
 //   dotnet run --project tools/Crowsnest.DevConsole -- --Logging:LogLevel:Default=Debug
 
+using SingleInstanceGuard? guard = SingleInstanceGuard.TryAcquire();
+if (guard is null)
+{
+    Console.Error.WriteLine("Crowsnest is already running (the tray app, or another DevConsole). Exit it first.");
+    return 1;
+}
+
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.AddCrowsnest();
 
 await builder.Build().RunAsync();
+return 0;

@@ -12,6 +12,7 @@ public sealed class SimulatedUsb : IAsyncDisposable
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<string, string?> _plugged = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _busy = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Plugged> _open = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _opens = new(StringComparer.OrdinalIgnoreCase);
 
@@ -35,6 +36,26 @@ public sealed class SimulatedUsb : IAsyncDisposable
         }
     }
 
+    /// <summary>A board another program holds open: opening it is refused, as Windows refuses with "Access is denied".</summary>
+    public void PlugBusy(string port)
+    {
+        lock (_gate)
+        {
+            _busy.Add(port);
+            _plugged[port] = null;
+        }
+    }
+
+    /// <summary>The other program lets go of a port plugged with <see cref="PlugBusy"/>: the board on it says hello as <paramref name="hardwareId"/>.</summary>
+    public void Release(string port, string hardwareId)
+    {
+        lock (_gate)
+        {
+            _busy.Remove(port);
+            _plugged[port] = hardwareId;
+        }
+    }
+
     /// <summary>Pulls the cable: the port goes, and an open link to it ends.</summary>
     public async Task UnplugAsync(string port)
     {
@@ -42,6 +63,7 @@ public sealed class SimulatedUsb : IAsyncDisposable
         lock (_gate)
         {
             _plugged.Remove(port);
+            _busy.Remove(port);
             _open.Remove(port, out open);
         }
 
@@ -86,6 +108,11 @@ public sealed class SimulatedUsb : IAsyncDisposable
             if (!_plugged.TryGetValue(port, out string? hardwareId))
             {
                 throw new IOException($"{port} is not plugged in.");
+            }
+
+            if (_busy.Contains(port))
+            {
+                throw new UnauthorizedAccessException($"Access to the path '{port}' is denied.");
             }
 
             _opens[port] = _opens.GetValueOrDefault(port) + 1;

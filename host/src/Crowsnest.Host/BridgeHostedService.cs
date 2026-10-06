@@ -120,7 +120,7 @@ public sealed partial class BridgeHostedService(
 
     private void DescribeAssignment(string hardwareId, BridgeSettings current)
     {
-        string shortId = hardwareId.Length > 6 ? hardwareId[^6..] : hardwareId;
+        string shortId = DeviceIdentity.ShortIdOf(hardwareId);
         DeviceSettings? device = current.Find(hardwareId);
         if (setup.PagesFor(device?.Panels ?? []).Count == 0)
         {

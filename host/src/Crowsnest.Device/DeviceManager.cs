@@ -17,6 +17,10 @@ public abstract record RosterChange(ConnectedDevice Device)
     public sealed record Left(ConnectedDevice Device, Exception? Reason) : RosterChange(Device);
 }
 
+/// <summary>A port with a known board's USB id that could not be used, kept until it succeeds or is unplugged.</summary>
+/// <param name="InUse">Another program holds the port ("Access is denied"); otherwise it did not answer as a Crowsnest device.</param>
+public sealed record UnavailablePort(string Port, bool InUse, string Reason);
+
 public sealed record DeviceManagerOptions
 {
     public TimeSpan ScanInterval { get; init; } = TimeSpan.FromSeconds(2);
@@ -47,11 +51,23 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
 {
     private readonly ConcurrentDictionary<string, ConnectedDevice> _connected = new(StringComparer.OrdinalIgnoreCase);
 
+    // Written only by the scan loop.
+    private readonly ConcurrentDictionary<string, UnavailablePort> _unavailable = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The devices being served now, by port name.</summary>
     public IReadOnlyList<ConnectedDevice> Connected => [.. _connected.Values.OrderBy(d => d.Port, StringComparer.OrdinalIgnoreCase)];
 
+    /// <summary>
+    /// Ports that look like ours but could not be used, by port name: the tray lists them, since
+    /// a board another program has grabbed otherwise just never shows up.
+    /// </summary>
+    public IReadOnlyList<UnavailablePort> Unavailable => [.. _unavailable.Values.OrderBy(p => p.Port, StringComparer.OrdinalIgnoreCase)];
+
     /// <summary>Raised as devices arrive and leave, on whichever thread noticed.</summary>
     public event Action<RosterChange>? RosterChanged;
+
+    /// <summary>Raised on the scan loop when <see cref="Unavailable"/> changes.</summary>
+    public event Action? UnavailableChanged;
 
     /// <summary>
     /// Scans and serves until <paramref name="ct"/> is cancelled, then waits for every device to
@@ -64,7 +80,6 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
 
         // Only this loop touches these.
         Dictionary<string, Task> held = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> refused = new(StringComparer.OrdinalIgnoreCase);
         bool announcedSearching = false;
 
         try
@@ -77,13 +92,16 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
                 }
 
                 IReadOnlyList<string> ports = options.FindPorts();
-                refused.IntersectWith(ports); // unplugged: complain afresh next time
+                foreach (string gone in _unavailable.Keys.Except(ports, StringComparer.OrdinalIgnoreCase).ToList())
+                {
+                    MarkAvailable(gone); // unplugged: complain afresh next time
+                }
 
                 foreach (string port in ports.Where(p => !held.ContainsKey(p)))
                 {
-                    if (await ProbeAsync(port, refused, ct).ConfigureAwait(false) is { } device)
+                    if (await ProbeAsync(port, ct).ConfigureAwait(false) is { } device)
                     {
-                        refused.Remove(port);
+                        MarkAvailable(port);
                         held[port] = ServeAsync(new ConnectedDevice(port, device.Identity!, device), serve, ct);
                     }
                 }
@@ -100,11 +118,15 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
         finally
         {
             await Task.WhenAll(held.Values).ConfigureAwait(false);
+            foreach (string port in _unavailable.Keys.ToList())
+            {
+                MarkAvailable(port);
+            }
         }
     }
 
     /// <summary>Opens a port and completes the handshake, or returns null.</summary>
-    private async Task<DeviceConnection?> ProbeAsync(string port, HashSet<string> refused, CancellationToken ct)
+    private async Task<DeviceConnection?> ProbeAsync(string port, CancellationToken ct)
     {
         DeviceConnection? device = null;
         try
@@ -118,9 +140,16 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
         {
             // Busy ("Access is denied": another program holds the port) or not a Crowsnest device.
             // Said once per port, since the scan asks again every couple of seconds.
-            if (refused.Add(port))
+            UnavailablePort unavailable = new(port, e is UnauthorizedAccessException || e.InnerException is UnauthorizedAccessException, e.Message);
+            if (!_unavailable.TryGetValue(port, out UnavailablePort? before))
             {
                 LogCandidateRejected(log, port, e.Message);
+            }
+
+            if (before != unavailable)
+            {
+                _unavailable[port] = unavailable;
+                RaiseUnavailableChanged();
             }
 
             if (device is not null)
@@ -179,6 +208,29 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
         }
     }
 
+    private void MarkAvailable(string port)
+    {
+        if (_unavailable.TryRemove(port, out _))
+        {
+            RaiseUnavailableChanged();
+        }
+    }
+
+    private void RaiseUnavailableChanged()
+    {
+        foreach (Action listener in UnavailableChanged?.GetInvocationList().Cast<Action>() ?? [])
+        {
+            try
+            {
+                listener();
+            }
+            catch (Exception e)
+            {
+                LogListenerFailed(log, e);
+            }
+        }
+    }
+
     /// <summary>
     /// One listener at a time: one that throws must not keep the change from the others, nor stop
     /// a device being served or closed.
@@ -230,7 +282,7 @@ public sealed partial class DeviceManager(DeviceManagerOptions options, ILogger<
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Port} is not an available device: {Reason}")]
     private static partial void LogCandidateRejected(ILogger logger, string port, string reason);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "A roster listener failed")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "A device manager listener failed")]
     private static partial void LogListenerFailed(ILogger logger, Exception error);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Lost device {HardwareId}; looking for it again")]

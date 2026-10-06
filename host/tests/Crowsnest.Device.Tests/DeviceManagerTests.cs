@@ -157,6 +157,42 @@ public sealed class DeviceManagerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APortAnotherProgramHoldsIsListedAsInUseUntilItIsLetGo()
+    {
+        int changes = 0;
+        _manager.UnavailableChanged += () => Interlocked.Increment(ref changes);
+        _usb.PlugBusy("COM5");
+        Start();
+
+        await Eventually(() => _manager.Unavailable.Count == 1, "COM5 to be listed");
+        UnavailablePort busy = _manager.Unavailable[0];
+        Assert.Equal("COM5", busy.Port);
+        Assert.True(busy.InUse);
+        await Task.Delay(100); // more probes, same answer
+        Assert.Equal(1, Volatile.Read(ref changes));
+
+        _usb.Release("COM5", A);
+
+        await Eventually(() => _manager.Connected.Count == 1, "COM5 once it is let go");
+        Assert.Empty(_manager.Unavailable);
+        Assert.Equal(2, Volatile.Read(ref changes));
+    }
+
+    [Fact]
+    public async Task APortThatNeverAnswersIsListedUntilItIsUnplugged()
+    {
+        _usb.PlugSilent("COM9");
+        Start();
+
+        await Eventually(() => _manager.Unavailable.Count == 1, "COM9 to be listed");
+        Assert.False(_manager.Unavailable[0].InUse);
+
+        await _usb.UnplugAsync("COM9");
+
+        await Eventually(() => _manager.Unavailable.Count == 0, "COM9 to leave the list");
+    }
+
+    [Fact]
     public async Task APortThatNeverAnswersIsReportedOnceUntilItIsReplugged()
     {
         _usb.PlugSilent("COM9");

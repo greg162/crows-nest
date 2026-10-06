@@ -42,6 +42,8 @@ public static class HostBuilderExtensions
             sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<ISimParameterGateway>(sp => sp.GetRequiredService<SimConnectParameterGateway>());
 
+        services.AddSingleton<HealthSnapshotProvider>();
+
         services.AddHostedService<SimConnectHostedService>();
         services.AddHostedService<BridgeHostedService>();
         return builder;

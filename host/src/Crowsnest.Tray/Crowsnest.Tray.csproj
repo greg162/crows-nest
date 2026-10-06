@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The app (spec s8): Crowsnest.Host in this process, behind a tray icon. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crowsnest.Host\Crowsnest.Host.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Crowsnest.exe in Task Manager and the Run key. -->
+    <AssemblyName>Crowsnest</AssemblyName>
+    <RootNamespace>Crowsnest.Tray</RootNamespace>
+    <!-- WPF looks up the en-US culture to lay out any element (a menu is enough), and invariant
+         mode has no cultures, so it crashes. App sets the invariant culture instead, which keeps
+         the host formatting as it does everywhere else. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

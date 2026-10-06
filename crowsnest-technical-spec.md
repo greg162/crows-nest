@@ -923,7 +923,7 @@ Each device keeps its own `PageNavigator` — devices navigate independently eve
 
 `Crowsnest.Device.Simulation` holds `SimulatedDevice` (the device end of the link, merged from the device simulator's copy and the tests' `FakeDevice`, with test hooks such as `HelloAcks`, `Brightness`, `Latest` and fault injection) and `SimulatedUsb` (pretend ports to plug devices into and pull them out of). The device simulator and the Device and Host tests all use them.
 
-Still open from this section: the tray's notification for an unassigned device.
+The tray's notification for an unassigned device was added 2026-10-05 (§8).
 
 ### 6.3 Firmware updates over the link
 
@@ -1114,6 +1114,8 @@ public sealed class DiagnosticsViewModel;               // live log tail + link 
 public sealed class StartupRegistration;                // HKCU\...\Run
 public sealed class SingleInstanceGuard;                // named mutex + pipe activation
 ```
+
+**`Crowsnest.Tray` first cut implemented 2026-10-05.** The app is `Crowsnest.exe` (WPF, H.NotifyIcon), running the host in-process with no window. `HealthSnapshotProvider` (Host, tested) builds a `HealthSnapshot` fresh on each read from the sim's `ConnectionState`, `DeviceManager.Connected` and the settings, raises `Changed`, and raises `UnassignedDeviceArrived`, which the tray shows as a notification; clicking it opens settings.json. The icon is grey, amber or green (the sim counts as up only when `Connected`, i.e. a flight is ready). The tooltip and the top of the menu say what each of sim and devices is doing, and name any port with our USB id that could not be used ("COM5: in use by another program" when Windows says "Access is denied", otherwise "not answering"; `DeviceManager.Unavailable`, kept until the port works or is unplugged), since a board another program has grabbed otherwise just never appears; below that are Open settings, Open logs folder, Start with Windows (`StartupRegistration`, the HKCU Run key; only an entry naming this executable counts as on) and Exit. `SingleInstanceGuard` lives in Host rather than Tray, because DevConsole takes it too: the two would fight over the ports. It is a plain named mutex, without the pipe activation; a second copy says it is already running and exits. Serilog writes daily files to `%LOCALAPPDATA%\Crowsnest\logs\`, keeping 7. `TaskbarIcon.ForceCreate(false)`: its default turns on Windows efficiency mode, which would throttle the knob-to-sim loop. The tray project turns `InvariantGlobalization` back off: WPF looks up the en-US culture to lay out any element, and crashed opening the menu; it sets the invariant culture instead, so the host formats as in every other project. Not yet: the settings window, the diagnostics window and its ring-buffer sink, pipe activation, and an app icon for the executable.
 
 **`SettingsStore` implemented 2026-10-04.** In `Crowsnest.Host`, tested by `Crowsnest.Host.Tests` (which also runs the bridge end to end over `SimulatedUsb`). Creates the file with a commented starter when it is missing, reads it at startup, and watches it: a saved edit applies within about 300 ms, and a file that does not parse is logged and the last good settings kept. `Save` writes a `.tmp` and moves it over the file, so a crash leaves the old settings or the new. The tray will run the host in its own process, change settings in memory, and `Save`; until then the file is edited by hand. Holds only device assignments and brightness for now (§6.2).
 

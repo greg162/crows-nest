@@ -5,6 +5,7 @@
     <Project Path="src/Crowsnest.Host/Crowsnest.Host.csproj" />
     <Project Path="src/Crowsnest.Sim/Crowsnest.Sim.csproj" />
     <Project Path="src/Crowsnest.SimConnect/Crowsnest.SimConnect.csproj" />
+    <Project Path="src/Crowsnest.Tray/Crowsnest.Tray.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Crowsnest.Core.Tests/Crowsnest.Core.Tests.csproj" />
