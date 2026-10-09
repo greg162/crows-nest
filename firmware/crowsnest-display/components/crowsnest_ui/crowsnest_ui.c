@@ -20,6 +20,7 @@ static const char *TAG = "ui";
 
 static lv_obj_t *s_screen;
 static lv_obj_t *s_pair;
+static lv_obj_t *s_framed;
 static lv_obj_t *s_stack;
 static lv_obj_t *s_waiting;
 static lv_obj_t *s_dots;
@@ -80,6 +81,7 @@ esp_err_t crowsnest_ui_init(lv_display_t *display)
     lv_obj_set_scrollable(s_screen, false);
 
     s_pair = radio_pair_create(s_screen);
+    s_framed = framed_value_create(s_screen);
     s_stack = value_stack_create(s_screen);
     s_waiting = waiting_create(s_screen);
     make_page_indicator();
@@ -95,7 +97,7 @@ esp_err_t crowsnest_ui_init(lv_display_t *display)
 
 static void show_only(lv_obj_t *view)
 {
-    lv_obj_t *views[] = { s_pair, s_stack, s_waiting };
+    lv_obj_t *views[] = { s_pair, s_framed, s_stack, s_waiting };
     for (size_t i = 0; i < sizeof views / sizeof views[0]; i++) {
         lv_obj_set_hidden(views[i], views[i] != view);
     }
@@ -156,6 +158,9 @@ void crowsnest_ui_render(const cn_state_t *state)
     if (state->layout == CN_LAYOUT_PAIR) {
         radio_pair_render(state);
         show_only(s_pair);
+    } else if (state->layout == CN_LAYOUT_FRAMED) {
+        framed_value_render(state);
+        show_only(s_framed);
     } else {
         value_stack_render(state);
         show_only(s_stack);

@@ -1,0 +1,2 @@
+// What the fake sim starts with (spec §7.3), for the device simulator's demo: VFR in the UK.
+{ "xpdr.code": 7000 }

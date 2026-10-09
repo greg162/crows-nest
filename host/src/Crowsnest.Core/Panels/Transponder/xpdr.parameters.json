@@ -1,0 +1,17 @@
+// The squawk code (spec §5.2, §5.3). The value is the code as it reads: 7700 is the int 7700.
+// The sim keeps it as BCO16, one digit per nibble, both ways: read in that unit it is unpacked
+// to the code, and XPNDR_SET takes it packed again. Each cursor turns one digit, 7 back to 0,
+// the way a transponder's knobs do.
+[
+  {
+    "id": "xpdr.code", "label": "SQUAWK", "unit": "code",
+    "grid":    { "type": "digits", "digits": 4, "radix": 8 },
+    "cursors": [ { "name": "d1", "step": 1000, "wrap": "wrapWithinParent", "span": "0..1" },
+                 { "name": "d2", "step": 100,  "wrap": "wrapWithinParent", "span": "1..2" },
+                 { "name": "d3", "step": 10,   "wrap": "wrapWithinParent", "span": "2..3" },
+                 { "name": "d4", "step": 1,    "wrap": "wrapWithinParent", "span": "3..4" } ],
+    "read":    { "source": "simvar", "name": "TRANSPONDER CODE:1", "unit": "BCO16" },
+    "write":   { "mode": "keyEvent", "target": "XPNDR_SET", "encoding": "bcd16" },
+    "format":  "code4"
+  }
+]

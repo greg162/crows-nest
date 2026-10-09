@@ -9,6 +9,9 @@ public enum PageLayout
     ActiveStandbyPair,
     SingleValue,
     DualValue,
+
+    /// <summary>One value, large and green, in the P180 frame with the title in its border (firmware 0.4.0).</summary>
+    FramedValue,
 }
 
 /// <summary>
@@ -23,6 +26,7 @@ public static class PageLayoutNames
         ["pair"] = PageLayout.ActiveStandbyPair,
         ["single"] = PageLayout.SingleValue,
         ["dual"] = PageLayout.DualValue,
+        ["framed"] = PageLayout.FramedValue,
     };
 
     public static IReadOnlyCollection<string> All => ByName.Keys;

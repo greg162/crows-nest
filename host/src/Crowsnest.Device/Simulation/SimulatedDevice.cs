@@ -142,7 +142,7 @@ public sealed class SimulatedDevice : IAsyncDisposable
                     Touch = true,
                     Buttons = 1,
                     MaxFields = 3,
-                    Layouts = ["pair", "single", "dual"],
+                    Layouts = ["pair", "single", "dual", "framed"],
                 },
             },
             ct);

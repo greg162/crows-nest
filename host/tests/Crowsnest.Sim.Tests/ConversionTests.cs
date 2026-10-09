@@ -44,6 +44,31 @@ public class ValueConverterTests
     private static readonly ReadBinding Hz = new(ReadSource.SimVar, "COM ACTIVE FREQUENCY:1", "Hz", 0.001);
     private static readonly ReadBinding Mhz = new(ReadSource.SimVar, "COM ACTIVE FREQUENCY:1", "MHz", 1000);
     private static readonly ReadBinding Enum = new(ReadSource.SimVar, "COM SPACING MODE:1", "Enum", 1);
+    private static readonly ReadBinding Bco16 = new(ReadSource.SimVar, "TRANSPONDER CODE:1", "BCO16", 1);
+
+    [Theory]
+    [InlineData(0x7700, 7700)]
+    [InlineData(0x1200, 1200)]
+    [InlineData(0x0077, 77)]
+    [InlineData(0, 0)] // squawk 0000 is a code, unlike a frequency of 0
+    public void APackedCodeIsUnpackedToTheDigitsItReads(int packed, int expected) =>
+        Assert.Equal(expected, ValueConverter.ToCanonical(packed, Bco16));
+
+    [Theory]
+    [InlineData(7700.0)] // 0x1E14: the code already unpacked, which a nibble of E gives away
+    [InlineData(0x10000)]
+    [InlineData(-1.0)]
+    [InlineData(4608.5)]
+    [InlineData(double.NaN)]
+    public void WhatIsNotPackedDigitsIsNoValue(double raw) =>
+        Assert.Null(ValueConverter.ToCanonical(raw, Bco16));
+
+    [Theory]
+    [InlineData(1200)]
+    [InlineData(7777)]
+    [InlineData(0)]
+    public void UnpackingUndoesTheWriteEncoding(int code) =>
+        Assert.Equal(code, ValueConverter.ToCanonical(PayloadEncoder.Encode(code, PayloadEncoding.Bcd16), Bco16));
 
     [Theory]
     [InlineData(121_500_000.0, 121_500)]

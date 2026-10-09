@@ -324,6 +324,9 @@ static cn_layout_t layout_from(const char *s)
     if (strcmp(s, "dual") == 0) {
         return CN_LAYOUT_DUAL;
     }
+    if (strcmp(s, "framed") == 0) {
+        return CN_LAYOUT_FRAMED;
+    }
     return CN_LAYOUT_UNKNOWN; /* a layout this firmware has never heard of */
 }
 
@@ -662,7 +665,7 @@ int cn_link_encode_hello(char *out, size_t cap, const cn_hello_info_t *info)
         out, cap,
         "{\"v\":%d,\"t\":\"hello\",\"dev\":\"%s\",\"fw\":\"%s\",\"id\":\"%s\","
         "\"caps\":{\"shape\":\"%s\",\"w\":%d,\"h\":%d,\"encoder\":%s,\"detentsPerClick\":%d,"
-        "\"touch\":%s,\"buttons\":%d,\"maxFields\":%d,\"layouts\":[\"pair\",\"single\",\"dual\"]}}\n",
+        "\"touch\":%s,\"buttons\":%d,\"maxFields\":%d,\"layouts\":[\"pair\",\"single\",\"dual\",\"framed\"]}}\n",
         CN_PROTOCOL_VERSION, info->device_type, info->firmware_version, info->hardware_id,
         info->shape, info->width, info->height, info->has_encoder ? "true" : "false",
         info->detents_per_click, info->has_touch ? "true" : "false", info->buttons,

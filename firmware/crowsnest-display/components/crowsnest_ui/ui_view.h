@@ -31,6 +31,21 @@
 lv_obj_t *ui_container(lv_obj_t *parent);
 
 /*
+ * The P180 frame (ui_frame.c): `frame` is the bordered box, a centred column to put values
+ * in; `title` is set into its top border; `root` holds both, for the dispatcher to show
+ * and hide.
+ */
+#define UI_FRAME_BORDER 2
+
+typedef struct {
+    lv_obj_t *root;
+    lv_obj_t *frame;
+    lv_obj_t *title;
+} ui_frame_t;
+
+ui_frame_t ui_frame_create(lv_obj_t *screen);
+
+/*
  * One value with the host's cursor span underlined. Three labels in a row rather than
  * one, so the span carries its own underline without measuring glyph widths: the text
  * before the cursor, the text under it, and the text after. A font change then cannot put
@@ -46,6 +61,9 @@ typedef struct {
 ui_value_t ui_value_create(lv_obj_t *parent, const lv_font_t *font);
 void ui_value_set_font(ui_value_t *value, const lv_font_t *font);
 
+/* Spaces the characters out, evenly across the cursor's edges too. */
+void ui_value_set_letter_space(ui_value_t *value, int32_t space);
+
 /* Shows the field's text in `colour`, underlining its cursor span if it has a valid one. */
 void ui_value_show(ui_value_t *value, const cn_field_t *field, lv_color_t colour);
 
@@ -55,6 +73,10 @@ void ui_value_show(ui_value_t *value, const cn_field_t *field, lv_color_t colour
 /* CN_LAYOUT_PAIR: the P180 frame, active above standby. */
 lv_obj_t *radio_pair_create(lv_obj_t *screen);
 void radio_pair_render(const cn_state_t *state);
+
+/* CN_LAYOUT_FRAMED: one value in the P180 frame, large and green. */
+lv_obj_t *framed_value_create(lv_obj_t *screen);
+void framed_value_render(const cn_state_t *state);
 
 /* CN_LAYOUT_SINGLE and CN_LAYOUT_DUAL: labelled values in a column under the title. */
 lv_obj_t *value_stack_create(lv_obj_t *screen);

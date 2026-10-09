@@ -31,8 +31,9 @@ Say you're adding the ADF.
          "fields": [ "adf1.standby", "adf1.active" ], "swapEvent": "ADF1_RADIO_SWAP" } ] }
    ```
 
-   The layout is one the firmware already draws: `pair` (active over standby), `single` or
-   `dual`. The first field is the one the knob tunes. A `swapEvent` needs exactly two fields.
+   The layout is one the firmware already draws: `pair` (active over standby), `framed` (one
+   value, large and green in the P180 frame, as the transponder uses), `single` or `dual`.
+   The first field is the one the knob tunes. A `swapEvent` needs exactly two fields.
 
 4. **Give the demo some values** (optional) in `Panels/Adf/adf.demo.json`, e.g.
    `{ "adf1.active": 350, "adf1.standby": 410 }`. The fake sim and the device simulator start
@@ -99,7 +100,7 @@ Tests for that code go in the matching folder, `host/tests/Crowsnest.Core.Tests/
 ## What a panel can't do on its own
 
 - **A new screen layout** is firmware work (spec §5.5): the firmware draws a small, fixed set
-  of layouts, and pages pick one. Use `pair`, `single` or `dual` if you can.
+  of layouts, and pages pick one. Use `pair`, `framed`, `single` or `dual` if you can.
 - **Behaviour in the fake sim** beyond swaps and starting values (say, the sim snapping
   values when a mode changes) belongs in the tool that wants it, via `FakeParameterGateway.On`.
   The device simulator does this for COM spacing.

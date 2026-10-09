@@ -57,6 +57,7 @@ public class ProtocolCodecTests
     [InlineData(PageLayout.ActiveStandbyPair, "pair")]
     [InlineData(PageLayout.SingleValue, "single")]
     [InlineData(PageLayout.DualValue, "dual")]
+    [InlineData(PageLayout.FramedValue, "framed")]
     public void LayoutNamesRoundTrip(PageLayout layout, string wire)
     {
         Assert.Equal(wire, ProtocolCodec.ToWire(layout));

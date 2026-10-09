@@ -1,6 +1,7 @@
 using Crowsnest.Core.Application.Panels;
 using Crowsnest.Core.Panels.Com;
 using Crowsnest.Core.Panels.Nav;
+using Crowsnest.Core.Panels.Transponder;
 
 namespace Crowsnest.Core.Panels;
 
@@ -19,6 +20,7 @@ public static class PanelCatalog
     [
         new ComPanelModule(),
         new NavPanelModule(),
+        new TransponderPanelModule(),
     ];
 
     public static PanelSetup Load() => PanelComposer.Compose(All);

@@ -48,6 +48,24 @@ void ui_value_set_font(ui_value_t *value, const lv_font_t *font)
     lv_obj_set_style_text_font(value->after, font, 0);
 }
 
+void ui_value_set_letter_space(ui_value_t *value, int32_t space)
+{
+    lv_obj_set_style_text_letter_space(value->before, space, 0);
+    lv_obj_set_style_text_letter_space(value->cursor, space, 0);
+    lv_obj_set_style_text_letter_space(value->after, space, 0);
+
+    /* A label spaces the gaps inside it, not the one to the next label, so the row adds
+     * that, or the cursor's digit would sit closer to its neighbours than they do to theirs. */
+    lv_obj_set_style_pad_column(value->row, space, 0);
+}
+
+/* Sets a label's text and hides it when empty, so the row's column gap is not spent on it. */
+static void set_part(lv_obj_t *label, const char *text)
+{
+    lv_label_set_text(label, text);
+    lv_obj_set_hidden(label, text[0] == '\0');
+}
+
 void ui_value_show(ui_value_t *value, const cn_field_t *field, lv_color_t colour)
 {
     lv_obj_set_style_text_color(value->before, colour, 0);
@@ -60,9 +78,9 @@ void ui_value_show(ui_value_t *value, const cn_field_t *field, lv_color_t colour
 
     if (start < 0 || end <= start || end > len) {
         /* No cursor: the whole value goes in one label and nothing is underlined. */
-        lv_label_set_text(value->before, field->text);
-        lv_label_set_text(value->cursor, "");
-        lv_label_set_text(value->after, "");
+        set_part(value->before, field->text);
+        set_part(value->cursor, "");
+        set_part(value->after, "");
         lv_obj_set_style_border_width(value->cursor, 0, 0);
         return;
     }
@@ -71,12 +89,12 @@ void ui_value_show(ui_value_t *value, const cn_field_t *field, lv_color_t colour
 
     memcpy(buffer, field->text, (size_t)start);
     buffer[start] = '\0';
-    lv_label_set_text(value->before, buffer);
+    set_part(value->before, buffer);
 
     memcpy(buffer, field->text + start, (size_t)(end - start));
     buffer[end - start] = '\0';
-    lv_label_set_text(value->cursor, buffer);
+    set_part(value->cursor, buffer);
 
-    lv_label_set_text(value->after, field->text + end);
+    set_part(value->after, field->text + end);
     lv_obj_set_style_border_width(value->cursor, 4, 0);
 }

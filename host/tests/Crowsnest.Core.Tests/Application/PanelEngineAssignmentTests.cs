@@ -84,7 +84,7 @@ public class PanelEngineAssignmentTests
 
     [Fact]
     public void APageTheEngineDoesNotKnowIsRefused() =>
-        Assert.Throws<ArgumentException>(() => NewEngine().Join(Device, [new PanelPage("xpdr", "XPDR", PageLayout.SingleValue, [new ParameterId("com1.active")])]));
+        Assert.Throws<ArgumentException>(() => NewEngine().Join(Device, [new PanelPage("adf", "ADF", PageLayout.SingleValue, [new ParameterId("com1.active")])]));
 
     [Fact]
     public void AssigningAnUnassignedDeviceShowsItsFirstPage()
@@ -132,7 +132,7 @@ public class PanelEngineAssignmentTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData("xpdr")]
+    [InlineData("adf")]
     public void NoPanelOrAnUnknownOneHasNoPages(string? panel) =>
         Assert.Empty(Setup.PagesFor(panel));
 }

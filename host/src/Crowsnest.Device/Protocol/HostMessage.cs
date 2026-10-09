@@ -68,7 +68,7 @@ public sealed record WirePage
     [JsonPropertyName("title")]
     public required string Title { get; init; }
 
-    /// <summary>"pair" | "single" | "dual".</summary>
+    /// <summary>"pair" | "single" | "dual" | "framed".</summary>
     [JsonPropertyName("layout")]
     public required string Layout { get; init; }
 

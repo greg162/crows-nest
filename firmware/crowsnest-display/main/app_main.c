@@ -31,7 +31,7 @@
 
 static const char *TAG = "crowsnest";
 
-#define FIRMWARE_VERSION "0.3.4"
+#define FIRMWARE_VERSION "0.4.0"
 #define DEVICE_TYPE "crowpanel-2.1-rotary"
 
 #define INPUT_POLL_MS 20

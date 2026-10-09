@@ -1,0 +1,7 @@
+// The transponder's page (spec §5.5): the code alone, large and green in the P180 frame (the
+// firmware's "framed" layout, 0.4.0 on). There is no standby code, so a tap does nothing.
+{
+  "pages": [
+    { "id": "xpdr", "title": "XPDR", "layout": "framed", "fields": [ "xpdr.code" ] }
+  ]
+}

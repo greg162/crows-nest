@@ -42,6 +42,7 @@ typedef enum {
     CN_LAYOUT_PAIR,   /* ActiveStandbyPair */
     CN_LAYOUT_SINGLE, /* SingleValue */
     CN_LAYOUT_DUAL,   /* DualValue */
+    CN_LAYOUT_FRAMED, /* FramedValue */
 } cn_layout_t;
 
 typedef enum {
