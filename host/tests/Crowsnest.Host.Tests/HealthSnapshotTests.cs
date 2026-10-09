@@ -5,8 +5,8 @@ namespace Crowsnest.Host.Tests;
 
 public sealed class HealthSnapshotTests
 {
-    private static DeviceHealth Device(string hardwareId, string? name = null, params string[] panels) =>
-        new(new DeviceIdentity(hardwareId, "crowpanel-1.28", "0.3.4"), "COM7", name ?? DeviceIdentity.ShortIdOf(hardwareId), panels);
+    private static DeviceHealth Device(string hardwareId, string? name = null, string? panel = null) =>
+        new(new DeviceIdentity(hardwareId, "crowpanel-1.28", "0.3.4"), "COM7", name ?? DeviceIdentity.ShortIdOf(hardwareId), panel);
 
     [Theory]
     [InlineData(SimConnectionState.Disconnected, 0, HealthLight.Grey)]
@@ -22,11 +22,11 @@ public sealed class HealthSnapshotTests
     }
 
     [Fact]
-    public void DevicesAreDescribedByNameShortIdAndPanels()
+    public void DevicesAreDescribedByNameShortIdAndPanel()
     {
-        HealthSnapshot health = new(SimConnectionState.Connected, [Device("a4cb8fdccc6c", "Radios", "com", "nav"), Device("a4cb8fdc1234")], []);
+        HealthSnapshot health = new(SimConnectionState.Connected, [Device("a4cb8fdccc6c", "Radios", "com"), Device("a4cb8fdc1234")], []);
 
-        Assert.Equal(["Radios (dccc6c): com, nav", "dc1234: not assigned"], health.DeviceLines);
+        Assert.Equal(["Radios (dccc6c): com", "dc1234: not assigned"], health.DeviceLines);
         Assert.Equal("Crowsnest\nMSFS: connected\n2 devices, 1 not assigned", health.ToolTip);
     }
 

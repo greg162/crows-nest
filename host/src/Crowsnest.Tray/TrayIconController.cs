@@ -6,7 +6,10 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Crowsnest.Core.Application.Panels;
+using Crowsnest.Device;
 using Crowsnest.Host;
+using Crowsnest.Tray.Settings;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Serilog;
@@ -16,7 +19,7 @@ namespace Crowsnest.Tray;
 /// <summary>
 /// The tray icon and its menu (spec §8). The icon's colour carries the status, the tooltip says
 /// which of sim and devices are up, and the menu lists each device and what it shows. A device
-/// with no panels raises a notification pointing at the settings file (§6.2).
+/// with no panels raises a notification that opens the settings window at it (§6.2).
 ///
 /// Health changes arrive on any thread; everything here runs on the dispatcher.
 /// </summary>
@@ -30,6 +33,7 @@ public sealed class TrayIconController : IDisposable
     };
 
     private readonly HealthSnapshotProvider _health;
+    private readonly PanelSetup _setup;
     private readonly SettingsStore _settings;
     private readonly StartupRegistration _startup;
     private readonly Dispatcher _dispatcher;
@@ -38,10 +42,14 @@ public sealed class TrayIconController : IDisposable
     private readonly Lock _gate = new();
     private HealthLight? _shownLight;
     private bool _refreshQueued;
+    private SettingsWindow? _settingsWindow;
+    private string? _notifiedDevice;
 
-    public TrayIconController(HealthSnapshotProvider health, SettingsStore settings, StartupRegistration startup, Dispatcher dispatcher)
+    public TrayIconController(
+        HealthSnapshotProvider health, PanelSetup setup, SettingsStore settings, StartupRegistration startup, Dispatcher dispatcher)
     {
         _health = health;
+        _setup = setup;
         _settings = settings;
         _startup = startup;
         _dispatcher = dispatcher;
@@ -53,7 +61,7 @@ public sealed class TrayIconController : IDisposable
             NoLeftClickDelay = true,
         };
         _menu.Opened += (_, _) => BuildMenu(); // the Start with Windows tick is read afresh
-        _icon.TrayBalloonTipClicked += (_, _) => OpenSettings();
+        _icon.TrayBalloonTipClicked += (_, _) => OpenSettings(_notifiedDevice);
 
         // Not efficiency mode, which ForceCreate turns on by default: Windows would throttle the
         // process, and with it the knob-to-sim loop.
@@ -68,6 +76,7 @@ public sealed class TrayIconController : IDisposable
     {
         _health.Changed -= QueueRefresh;
         _health.UnassignedDeviceArrived -= OnUnassignedDeviceArrived;
+        _settingsWindow?.Close();
         _icon.Dispose();
     }
 
@@ -128,7 +137,8 @@ public sealed class TrayIconController : IDisposable
         }
 
         _menu.Items.Add(new Separator());
-        _menu.Items.Add(Item("Open settings", OpenSettings));
+        _menu.Items.Add(Item("Settings...", () => OpenSettings(null)));
+        _menu.Items.Add(Item("Open settings file", OpenSettingsFile));
         _menu.Items.Add(Item("Open logs folder", OpenLogsFolder));
         MenuItem startup = Item("Start with Windows", ToggleStartup);
         startup.IsCheckable = true;
@@ -142,9 +152,10 @@ public sealed class TrayIconController : IDisposable
     {
         if (!_icon.IsDisposed)
         {
+            _notifiedDevice = device.Identity.HardwareId;
             _icon.ShowNotification(
-                $"Device {device.Identity.ShortId} has no panels",
-                $"Click here to open settings, then add \"{device.Identity.ShortId}\" under \"devices\" with the panels it should show.",
+                $"Device {device.Identity.ShortId} has no panel",
+                "Click here to choose the panel it shows.",
                 NotificationIcon.Info);
         }
     });
@@ -163,7 +174,32 @@ public sealed class TrayIconController : IDisposable
         Log.Information("Start with Windows is now {State}", _startup.IsEnabled ? "on" : "off");
     }
 
-    private void OpenSettings()
+    /// <summary>The settings window, at the given device if there is one. One window at a time: a second ask brings it forward.</summary>
+    private void OpenSettings(string? hardwareId)
+    {
+        if (_settingsWindow is null)
+        {
+            SettingsViewModel model = new(
+                _settings.Current, _setup.Panels, _health.Current.Devices, new DeviceConnectionOptions().Brightness, _settings.Problem);
+            _settingsWindow = new SettingsWindow(model, _settings, _health);
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+            _settingsWindow.Show();
+        }
+
+        if (hardwareId is not null)
+        {
+            _settingsWindow.Select(hardwareId);
+        }
+
+        if (_settingsWindow.WindowState == WindowState.Minimized)
+        {
+            _settingsWindow.WindowState = WindowState.Normal;
+        }
+
+        _settingsWindow.Activate();
+    }
+
+    private void OpenSettingsFile()
     {
         try
         {

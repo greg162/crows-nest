@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using Crowsnest.Core.Application.Panels;
 using Crowsnest.Host;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -73,6 +74,7 @@ public partial class App : System.Windows.Application
 
             _tray = new TrayIconController(
                 _host.Services.GetRequiredService<HealthSnapshotProvider>(),
+                _host.Services.GetRequiredService<PanelSetup>(),
                 _host.Services.GetRequiredService<SettingsStore>(),
                 new StartupRegistration(Environment.ProcessPath!),
                 Dispatcher);

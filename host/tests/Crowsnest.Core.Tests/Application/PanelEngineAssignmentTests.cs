@@ -16,8 +16,8 @@ public class PanelEngineAssignmentTests
 
     private static readonly PanelSetup Setup = PanelCatalog.Load();
 
-    private static readonly IReadOnlyList<PanelPage> Com = Setup.PagesFor(["com"]);
-    private static readonly IReadOnlyList<PanelPage> Nav = Setup.PagesFor(["nav"]);
+    private static readonly IReadOnlyList<PanelPage> Com = Setup.PagesFor("com");
+    private static readonly IReadOnlyList<PanelPage> Nav = Setup.PagesFor("nav");
 
     private long _sequence;
 
@@ -72,8 +72,10 @@ public class PanelEngineAssignmentTests
         engine.OnInput(Device, LongPress(), T0);
 
         Assert.Equal("nav1", frame.Page.Id);
-        Assert.Equal(1, frame.Page.Count);
-        Assert.Equal("nav1", engine.CurrentPage(Device).Id); // one page: next page wraps to itself
+        Assert.Equal(2, frame.Page.Count);
+        Assert.Equal("nav2", engine.CurrentPage(Device).Id);
+        engine.OnInput(Device, LongPress(), T0);
+        Assert.Equal("nav1", engine.CurrentPage(Device).Id); // its last page wraps to its first, not to COM
     }
 
     [Fact]
@@ -97,23 +99,11 @@ public class PanelEngineAssignmentTests
     }
 
     [Fact]
-    public void ADeviceKeepsItsPageWhenItStillHasIt()
+    public void ANewPanelStartsAtItsFirstPage()
     {
         PanelEngine engine = NewEngine();
         engine.Join(Device, Com);
-        engine.OnInput(Device, LongPress(), T0);
-
-        DisplayFrame frame = engine.Assign(Device, Setup.PagesFor(["nav", "com"])).FrameFor(Device)!;
-
-        Assert.Equal("com2", frame.Page.Id);
-        Assert.Equal(2, frame.Page.Index);
-    }
-
-    [Fact]
-    public void ADeviceThatLosesItsPageStartsAtTheFirst()
-    {
-        PanelEngine engine = NewEngine();
-        engine.Join(Device, Com);
+        engine.OnInput(Device, LongPress(), T0); // on COM2
 
         Assert.Equal("nav1", engine.Assign(Device, Nav).FrameFor(Device)!.Page.Id);
     }
@@ -124,7 +114,7 @@ public class PanelEngineAssignmentTests
         PanelEngine engine = NewEngine();
         engine.Join(Device, Com);
 
-        Assert.Same(PanelEffects.None, engine.Assign(Device, Setup.PagesFor(["com"])));
+        Assert.Same(PanelEffects.None, engine.Assign(Device, Setup.PagesFor("com")));
     }
 
     [Fact]
@@ -137,6 +127,12 @@ public class PanelEngineAssignmentTests
     }
 
     [Fact]
-    public void PagesForFollowsTheOrderNamedAndSkipsUnknownsAndRepeats() =>
-        Assert.Equal(["nav1", "com1", "com2"], Setup.PagesFor(["nav", "xpdr", "com", "nav"]).Select(p => p.Id));
+    public void PagesForGivesThePanelsPagesInOrder() =>
+        Assert.Equal(["nav1", "nav2"], Setup.PagesFor("nav").Select(p => p.Id));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("xpdr")]
+    public void NoPanelOrAnUnknownOneHasNoPages(string? panel) =>
+        Assert.Empty(Setup.PagesFor(panel));
 }

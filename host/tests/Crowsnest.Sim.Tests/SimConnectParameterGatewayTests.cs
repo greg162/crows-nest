@@ -116,7 +116,7 @@ public sealed class SimConnectParameterGatewayTests : IAsyncDisposable
 
         Assert.Equal(
             ["CAMERA STATE", "COM STANDBY FREQUENCY:1", "COM ACTIVE FREQUENCY:1", "COM STANDBY FREQUENCY:2", "COM ACTIVE FREQUENCY:2",
-             "NAV STANDBY FREQUENCY:1", "NAV ACTIVE FREQUENCY:1", "COM SPACING MODE:1", "COM SPACING MODE:2"],
+             "NAV STANDBY FREQUENCY:1", "NAV ACTIVE FREQUENCY:1", "NAV STANDBY FREQUENCY:2", "NAV ACTIVE FREQUENCY:2", "COM SPACING MODE:1", "COM SPACING MODE:2"],
             Client.Watches.Select(w => w.SimVar));
         Assert.All(Client.Watches, w => Assert.Equal(SimConnectPeriod.VisualFrame, w.Period));
         Assert.Equal("Hz", Client.Watches.Single(w => w.SimVar == "COM ACTIVE FREQUENCY:1").Unit);

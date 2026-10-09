@@ -43,12 +43,12 @@ public sealed class SettingsStoreTests : IDisposable
     public void AnExistingFileIsReadNotReplaced()
     {
         Directory.CreateDirectory(_folder);
-        const string mine = """{ "devices": { "dccc6c": { "panels": [ "com" ] } } } // mine""";
+        const string mine = """{ "devices": { "dccc6c": { "panel": "com" } } } // mine""";
         File.WriteAllText(FilePath, mine);
 
         using SettingsStore store = Open();
 
-        Assert.Equal(["com"], store.Current.Find(Device)!.Panels);
+        Assert.Equal("com", store.Current.Find(Device)!.Panel);
         Assert.Equal(mine, File.ReadAllText(FilePath));
     }
 
@@ -58,7 +58,7 @@ public sealed class SettingsStoreTests : IDisposable
         using SettingsStore store = Open();
         TaskCompletionSource<BridgeSettings> changed = NextChange(store);
 
-        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panels": [ "nav" ], "brightness": 30 } } }""");
+        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panel": "nav", "brightness": 30 } } }""");
 
         BridgeSettings settings = await changed.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(30, settings.Find(Device)!.Brightness);
@@ -69,15 +69,31 @@ public sealed class SettingsStoreTests : IDisposable
     public async Task ABrokenEditKeepsTheLastGoodSettings()
     {
         Directory.CreateDirectory(_folder);
-        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panels": [ "com" ] } } }""");
+        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panel": "com" } } }""");
         using SettingsStore store = Open();
         TaskCompletionSource<BridgeSettings> changed = NextChange(store);
 
-        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panel": [ "nav" ] } } }""");
+        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "pannel": "nav" } } }""");
         await Task.Delay(800);
 
         Assert.False(changed.Task.IsCompleted);
-        Assert.Equal(["com"], store.Current.Find(Device)!.Panels);
+        Assert.Equal("com", store.Current.Find(Device)!.Panel);
+        Assert.Contains("devices.dccc6c.pannel", store.Problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheProblemClearsOnceTheFileReadsCleanly()
+    {
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(FilePath, "{ nope");
+        using SettingsStore store = Open();
+        Assert.NotNull(store.Problem);
+        TaskCompletionSource<BridgeSettings> changed = NextChange(store);
+
+        File.WriteAllText(FilePath, """{ "devices": { } }""");
+        await changed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Null(store.Problem);
     }
 
     [Fact]
@@ -86,10 +102,10 @@ public sealed class SettingsStoreTests : IDisposable
         using SettingsStore store = Open();
         TaskCompletionSource<BridgeSettings> changed = NextChange(store);
 
-        store.Save(new BridgeSettings(new Dictionary<string, DeviceSettings> { ["dccc6c"] = new("Radios", ["com", "nav"], 60) }));
+        store.Save(new BridgeSettings(new Dictionary<string, DeviceSettings> { ["dccc6c"] = new("Radios", "nav", 60) }));
 
         BridgeSettings settings = await changed.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(["com", "nav"], settings.Find(Device)!.Panels);
+        Assert.Equal("nav", settings.Find(Device)!.Panel);
         Assert.False(File.Exists(FilePath + ".tmp"));
     }
 
@@ -99,13 +115,13 @@ public sealed class SettingsStoreTests : IDisposable
         using SettingsStore store = Open();
         store.Changed += _ => throw new InvalidOperationException("handler bug");
 
-        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panels": [ "com" ] } } }""");
+        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panel": "com" } } }""");
         await WaitFor(() => store.Current.Find(Device) is not null);
         TaskCompletionSource<BridgeSettings> changed = NextChange(store);
 
-        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panels": [ "nav" ] } } }""");
+        File.WriteAllText(FilePath, """{ "devices": { "dccc6c": { "panel": "nav" } } }""");
 
-        Assert.Equal(["nav"], (await changed.Task.WaitAsync(TimeSpan.FromSeconds(5))).Find(Device)!.Panels);
+        Assert.Equal("nav", (await changed.Task.WaitAsync(TimeSpan.FromSeconds(5))).Find(Device)!.Panel);
     }
 
     private static async Task WaitFor(Func<bool> condition)

@@ -1,2 +1,2 @@
 // What the fake sim starts with (spec §7.3), for the device simulator's demo.
-{ "nav1.active": 113900, "nav1.standby": 110300 }
+{ "nav1.active": 113900, "nav1.standby": 110300, "nav2.active": 115700, "nav2.standby": 109500 }

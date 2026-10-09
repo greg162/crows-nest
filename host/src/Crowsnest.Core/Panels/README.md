@@ -59,8 +59,9 @@ Say you're adding the ADF.
 6. **Register it**: add `new AdfPanelModule(),` to `PanelCatalog.All`. Its position there is
    its place in the page order.
 
-7. **Put it on a device.** In `%LOCALAPPDATA%\Crowsnest\settings.json`, add `"adf"` to a device's
-   `"panels"`. The host picks up the change as soon as you save, and its log names the panels
+7. **Put it on a device.** Open Settings from the tray menu and choose ADF for a device, or in
+   `%LOCALAPPDATA%\Crowsnest\settings.json` set the device's `"panel": "adf"`. A device shows
+   one panel. The host picks up the change as soon as you save, and its log names the panels
    it knows about. (The device simulator shows every panel, so it needs no settings.)
 
 8. **Run the tests** (`dotnet test` in `host/`). `PanelCatalogTests` loads every registered

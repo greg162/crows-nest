@@ -12,6 +12,7 @@
     <Project Path="tests/Crowsnest.Device.Tests/Crowsnest.Device.Tests.csproj" />
     <Project Path="tests/Crowsnest.Host.Tests/Crowsnest.Host.Tests.csproj" />
     <Project Path="tests/Crowsnest.Sim.Tests/Crowsnest.Sim.Tests.csproj" />
+    <Project Path="tests/Crowsnest.Tray.Tests/Crowsnest.Tray.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Crowsnest.DevConsole/Crowsnest.DevConsole.csproj" />

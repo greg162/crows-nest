@@ -221,7 +221,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
     public async Task DevicesShowTheirAssignedPagesAndFollowNewSettings()
     {
         PanelSetup setup = PanelCatalog.Load();
-        Dictionary<string, string[]> assigned = new() { [DeviceA] = [], [DeviceB] = ["nav"] };
+        Dictionary<string, string?> assigned = new() { [DeviceA] = null, [DeviceB] = "nav" };
         Start(id =>
         {
             lock (assigned)
@@ -236,7 +236,7 @@ public sealed class PanelCoordinatorTests : IAsyncDisposable
 
         lock (assigned)
         {
-            assigned[DeviceA] = ["com"];
+            assigned[DeviceA] = "com";
         }
 
         _coordinator.Reassign();

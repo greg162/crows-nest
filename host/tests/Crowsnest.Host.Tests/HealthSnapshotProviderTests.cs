@@ -98,18 +98,19 @@ public sealed class HealthSnapshotProviderTests : IAsyncDisposable
         Assert.Equal(A, announced!.Identity.HardwareId);
 
         _health.Changed += () => Interlocked.Increment(ref changes);
-        File.WriteAllText(_settings.FilePath, """{ "devices": { "dccc6c": { "name": "Radios", "panels": [ "com", "nope" ] } } }""");
+        File.WriteAllText(_settings.FilePath, """{ "devices": { "dccc6c": { "name": "Radios", "panel": "nope" } } }""");
 
         await Eventually(() => Volatile.Read(ref changes) > 0, "a change for the settings edit");
         DeviceHealth device = Assert.Single(_health.Current.Devices);
         Assert.Equal("Radios", device.Name);
-        Assert.Equal(["com"], device.Panels); // the unknown panel shows nothing, so it is not listed
+        Assert.Null(device.Panel); // the unknown panel shows nothing, so it is not listed
+        Assert.False(device.Assigned);
     }
 
     [Fact]
     public async Task AnAssignedArrivalIsNotAnnounced()
     {
-        File.WriteAllText(_settings.FilePath, """{ "devices": { "dccc6c": { "panels": [ "nav" ] } } }""");
+        File.WriteAllText(_settings.FilePath, """{ "devices": { "dccc6c": { "panel": "nav" } } }""");
         await Eventually(() => _settings.Current.Devices.Count == 1, "the settings");
         bool announced = false;
         _health.UnassignedDeviceArrived += _ => announced = true;

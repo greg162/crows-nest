@@ -93,7 +93,7 @@ public sealed class BridgeHostedServiceTests : IAsyncDisposable
         await Eventually(() => On("COM7")?.Latest?.Page.Id == PanelEngine.UnassignedPageId, "the unassigned screen");
         Assert.Equal("dccc6c", On("COM7")!.Latest!.Fields[0].Text);
 
-        File.WriteAllText(SettingsPath, """{ "devices": { "dccc6c": { "panels": [ "nav" ], "brightness": 30 } } }""");
+        File.WriteAllText(SettingsPath, """{ "devices": { "dccc6c": { "panel": "nav", "brightness": 30 } } }""");
 
         await Eventually(() => On("COM7")?.Latest?.Page.Id == "nav1", "NAV 1 on the device");
         await Eventually(() => On("COM7")!.Brightness == 30, "the new brightness");
@@ -103,7 +103,7 @@ public sealed class BridgeHostedServiceTests : IAsyncDisposable
     [Fact]
     public async Task ListedDevicesStartOnTheirOwnPanelsAndBrightness()
     {
-        WriteSettings($$"""{ "devices": { "{{A}}": { "panels": [ "com" ], "brightness": 40 }, "dc1234": { "panels": [ "nav" ] } } }""");
+        WriteSettings($$"""{ "devices": { "{{A}}": { "panel": "com", "brightness": 40 }, "dc1234": { "panel": "nav" } } }""");
         _usb.Plug("COM7", A);
         _usb.Plug("COM8", B);
 
@@ -111,7 +111,7 @@ public sealed class BridgeHostedServiceTests : IAsyncDisposable
 
         await Eventually(() => On("COM7")?.Latest?.Page.Id == "com1" && On("COM8")?.Latest?.Page.Id == "nav1", "both devices' first pages");
         Assert.Equal(2, On("COM7")!.Latest!.Page.Count);
-        Assert.Equal(1, On("COM8")!.Latest!.Page.Count);
+        Assert.Equal(2, On("COM8")!.Latest!.Page.Count);
         Assert.Equal(40, On("COM7")!.Brightness);
         Assert.Equal(80, On("COM8")!.Brightness); // the default
     }
@@ -119,7 +119,7 @@ public sealed class BridgeHostedServiceTests : IAsyncDisposable
     [Fact]
     public async Task ADeviceThatIsUnpluggedAndPluggedBackInGetsItsPanelsAgain()
     {
-        WriteSettings("""{ "devices": { "dccc6c": { "panels": [ "nav" ] } } }""");
+        WriteSettings("""{ "devices": { "dccc6c": { "panel": "nav" } } }""");
         _usb.Plug("COM7", A);
         await StartAsync();
         await Eventually(() => On("COM7")?.Latest?.Page.Id == "nav1", "NAV 1");

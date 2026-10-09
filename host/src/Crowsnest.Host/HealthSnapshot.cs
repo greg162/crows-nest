@@ -13,10 +13,10 @@ public enum HealthLight
 
 /// <summary>A connected device as the tray shows it.</summary>
 /// <param name="Name">From settings, or the short id when settings give none.</param>
-/// <param name="Panels">The panels it shows; empty when it shows the unassigned screen.</param>
-public sealed record DeviceHealth(DeviceIdentity Identity, string Port, string Name, IReadOnlyList<string> Panels)
+/// <param name="Panel">The panel it shows; null when it shows the unassigned screen.</param>
+public sealed record DeviceHealth(DeviceIdentity Identity, string Port, string Name, string? Panel)
 {
-    public bool Assigned => Panels.Count > 0;
+    public bool Assigned => Panel is not null;
 }
 
 /// <summary>How the bridge is doing right now: what the tray icon, its tooltip and its menu show.</summary>
@@ -73,6 +73,6 @@ public sealed record HealthSnapshot(SimConnectionState Sim, IReadOnlyList<Device
     {
         string shortId = device.Identity.ShortId;
         string label = device.Name == shortId ? shortId : $"{device.Name} ({shortId})";
-        return device.Assigned ? $"{label}: {string.Join(", ", device.Panels)}" : $"{label}: not assigned";
+        return device.Assigned ? $"{label}: {device.Panel}" : $"{label}: not assigned";
     }
 }

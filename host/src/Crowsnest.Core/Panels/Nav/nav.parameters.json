@@ -1,5 +1,6 @@
-// NAV 1 (spec §5.2). Registered in phase 1 to prove the generalisation before it was needed
-// (spec §13); its page is in View/nav.view.json.
+// NAV 1 and NAV 2 (spec §5.2). NAV 1 was registered in phase 1 to prove the generalisation
+// before it was needed (spec §13); NAV 2 is the same with index 2. The pages are in
+// View/nav.view.json.
 [
   {
     "id": "nav1.standby", "label": "NAV 1 STBY", "unit": "kHz",
@@ -17,6 +18,24 @@
                  { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
     "read":    { "source": "simvar", "name": "NAV ACTIVE FREQUENCY:1", "unit": "Hz", "scale": 0.001 },
     "write":   { "mode": "keyEvent", "target": "NAV1_RADIO_SET_HZ", "encoding": "hz" },
+    "format":  "freq2"
+  },
+  {
+    "id": "nav2.standby", "label": "NAV 2 STBY", "unit": "kHz",
+    "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
+    "read":    { "source": "simvar", "name": "NAV STANDBY FREQUENCY:2", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "NAV2_STBY_SET_HZ", "encoding": "hz" },
+    "format":  "freq2"
+  },
+  {
+    "id": "nav2.active", "label": "NAV 2", "unit": "kHz",
+    "grid":    { "type": "linear", "min": 108000, "max": 117950, "step": 50, "parent": 1000 },
+    "cursors": [ { "name": "mhz", "step": 1000, "wrap": "clamp",            "span": "0..3" },
+                 { "name": "khz", "step": 50,   "wrap": "wrapWithinParent", "span": "4..6" } ],
+    "read":    { "source": "simvar", "name": "NAV ACTIVE FREQUENCY:2", "unit": "Hz", "scale": 0.001 },
+    "write":   { "mode": "keyEvent", "target": "NAV2_RADIO_SET_HZ", "encoding": "hz" },
     "format":  "freq2"
   }
 ]

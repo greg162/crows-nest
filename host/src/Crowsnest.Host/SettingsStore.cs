@@ -17,15 +17,16 @@ public sealed partial class SettingsStore : IDisposable
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(300);
 
     private const string Starter = """
-        // Crowsnest settings (spec §6.2). Changes apply as soon as you save this file.
+        // Crowsnest settings (spec §6.2). Changes apply as soon as you save this file. The
+        // Settings window in the tray menu edits it too, but writes it without these comments.
         //
-        // "devices" says which panels each device shows. Name a device by the six characters its
-        // screen shows (or its full 12-character hardware id). It pages through its panels in the
-        // order listed. Brightness goes from 0 to 100. For example:
+        // "devices" says which panel each device shows. Name a device by the six characters its
+        // screen shows (or its full 12-character hardware id). A long press pages through its
+        // panel's pages (COM1, COM2). Brightness goes from 0 to 100. For example:
         //
         //   "devices": {
-        //     "c81234": { "name": "Radios", "panels": [ "com" ], "brightness": 80 },
-        //     "9f44a1": { "name": "Nav", "panels": [ "nav" ] }
+        //     "c81234": { "name": "Radios", "panel": "com", "brightness": 80 },
+        //     "9f44a1": { "name": "Nav", "panel": "nav" }
         //   }
         {
           "devices": {
@@ -39,6 +40,7 @@ public sealed partial class SettingsStore : IDisposable
     private readonly Timer _settle;
     private readonly Lock _gate = new();
     private BridgeSettings _current = BridgeSettings.Empty;
+    private string? _problem;
 
     /// <param name="path">The file; defaults to <see cref="DefaultPath"/>.</param>
     public SettingsStore(ILogger<SettingsStore> log, string? path = null)
@@ -88,6 +90,21 @@ public sealed partial class SettingsStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Why the file was last rejected, while <see cref="Current"/> is still the settings from
+    /// before that; null once it reads cleanly.
+    /// </summary>
+    public string? Problem
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _problem;
+            }
+        }
+    }
+
     /// <summary>Raised after the file is read again, on a thread-pool thread.</summary>
     public event Action<BridgeSettings>? Changed;
 
@@ -117,6 +134,11 @@ public sealed partial class SettingsStore : IDisposable
         }
         catch (InvalidDataException e)
         {
+            lock (_gate)
+            {
+                _problem = e.Message;
+            }
+
             LogInvalid(_log, FilePath, e.Message);
             return;
         }
@@ -130,6 +152,7 @@ public sealed partial class SettingsStore : IDisposable
         lock (_gate)
         {
             _current = settings;
+            _problem = null;
         }
 
         LogLoaded(_log, FilePath, settings.Devices.Count);

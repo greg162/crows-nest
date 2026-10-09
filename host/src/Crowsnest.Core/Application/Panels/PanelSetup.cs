@@ -20,18 +20,15 @@ public sealed record PanelSetup(
     /// <summary>Every page of every panel, in catalog order.</summary>
     public IReadOnlyList<PanelPage> Pages => [.. Panels.SelectMany(p => p.Pages)];
 
-    /// <summary>
-    /// The pages of the named panels, in the order named: what a device assigned those panels
-    /// shows (spec §6.2). Ids that name no panel, and repeats, are skipped.
-    /// </summary>
-    public IReadOnlyList<PanelPage> PagesFor(IEnumerable<string> panelIds)
-    {
-        ArgumentNullException.ThrowIfNull(panelIds);
+    /// <summary>Whether a panel by this id ships, as <c>"com"</c> does.</summary>
+    public bool HasPanel(string? panelId) => Panels.Any(p => p.PanelId == panelId);
 
-        return [.. panelIds
-            .Distinct(StringComparer.Ordinal)
-            .SelectMany(id => Panels.FirstOrDefault(p => p.PanelId == id)?.Pages ?? [])];
-    }
+    /// <summary>
+    /// The pages of the named panel: what a device assigned it shows (spec §6.2). None for no
+    /// panel, or an id that names none.
+    /// </summary>
+    public IReadOnlyList<PanelPage> PagesFor(string? panelId) =>
+        Panels.FirstOrDefault(p => p.PanelId == panelId)?.Pages ?? [];
 }
 
 /// <summary>One panel's pages, from its <c>*.view.json</c> files. A panel may have none yet.</summary>

@@ -69,8 +69,8 @@ public sealed partial class HealthSnapshotProvider : IDisposable
     private DeviceHealth Describe(ConnectedDevice device, BridgeSettings settings)
     {
         DeviceSettings? entry = settings.Find(device.Identity.HardwareId);
-        IReadOnlyList<string> panels = [.. (entry?.Panels ?? []).Where(p => _setup.Panels.Any(known => known.PanelId == p))];
-        return new DeviceHealth(device.Identity, device.Port, entry?.Name ?? device.Identity.ShortId, panels);
+        string? panel = _setup.HasPanel(entry?.Panel) ? entry?.Panel : null; // an unknown panel shows nothing
+        return new DeviceHealth(device.Identity, device.Port, entry?.Name ?? device.Identity.ShortId, panel);
     }
 
     private void OnSettingsChanged(BridgeSettings changed) => Raise(Changed);

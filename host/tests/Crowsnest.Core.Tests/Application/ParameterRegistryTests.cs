@@ -14,10 +14,11 @@ public class ParameterRegistryTests
     public static TheoryData<string> ShippedIds => [.. Registry.All.Select(p => p.Id.Key)];
 
     [Fact]
-    public void TheDefaultRegistryHasBothComsAndNavOne()
+    public void TheDefaultRegistryHasBothComsAndBothNavs()
     {
-        // NAV 1 is registered without a page, to prove the generalisation (spec §13).
-        Assert.Equal(["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active"], Registry.All.Select(p => p.Id.Key));
+        Assert.Equal(
+            ["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active", "nav2.standby", "nav2.active"],
+            Registry.All.Select(p => p.Id.Key));
     }
 
     [Theory]
@@ -97,7 +98,7 @@ public class ParameterRegistryTests
     public void TheGatewaySubscribesToEveryParameterAndTheSpacingWatches()
     {
         Assert.Equal(
-            ["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active", "com1.spacing", "com2.spacing"],
+            ["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active", "nav2.standby", "nav2.active", "com1.spacing", "com2.spacing"],
             Registry.Subscriptions.Select(s => s.Id.Key));
         Assert.Equal(Registry.Subscriptions.Count, Registry.Subscriptions.Select(s => s.Read.Name).Distinct().Count());
         Assert.Equal(

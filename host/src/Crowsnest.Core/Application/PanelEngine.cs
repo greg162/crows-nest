@@ -128,8 +128,8 @@ public sealed class PanelEngine : IPanelContext
     }
 
     /// <summary>
-    /// Gives a connected device different pages, when its settings change. It stays on the page
-    /// it was showing if it still has it. Nothing happens if the pages are the same.
+    /// Gives a connected device different pages, when its settings change, starting at the
+    /// first. Nothing happens if the pages are the same.
     /// </summary>
     /// <param name="pages">Empty for the unassigned screen.</param>
     public PanelEffects Assign(string deviceId, IReadOnlyList<PanelPage> pages)
@@ -142,13 +142,7 @@ public sealed class PanelEngine : IPanelContext
             return PanelEffects.None;
         }
 
-        string? showing = view.Pages?.Current.Id;
         view.Assign(Checked(pages));
-        if (showing is not null)
-        {
-            view.Pages?.TryGoTo(showing);
-        }
-
         return Redraw(view);
     }
 

@@ -77,9 +77,9 @@ public sealed partial class BridgeHostedService(
         return coordinator.RunDeviceAsync(device.Identity.HardwareId, device.Connection, ct);
     }
 
-    /// <summary>What a device shows: its panels' pages, or nothing (the unassigned screen). Called on the coordinator's loop.</summary>
+    /// <summary>What a device shows: its panel's pages, or nothing (the unassigned screen). Called on the coordinator's loop.</summary>
     private IReadOnlyList<PanelPage> PagesFor(string hardwareId) =>
-        setup.PagesFor(settings.Current.Find(hardwareId)?.Panels ?? []);
+        setup.PagesFor(settings.Current.Find(hardwareId)?.Panel);
 
     /// <summary>On the settings file's watcher thread.</summary>
     private void OnSettingsChanged(BridgeSettings changed)
@@ -111,7 +111,7 @@ public sealed partial class BridgeHostedService(
     {
         foreach ((string key, DeviceSettings device) in current.Devices)
         {
-            foreach (string panel in device.Panels.Where(p => setup.Panels.All(known => known.PanelId != p)))
+            if (device.Panel is { } panel && !setup.HasPanel(panel))
             {
                 LogUnknownPanel(log, key, panel, AvailablePanels);
             }
@@ -122,13 +122,13 @@ public sealed partial class BridgeHostedService(
     {
         string shortId = DeviceIdentity.ShortIdOf(hardwareId);
         DeviceSettings? device = current.Find(hardwareId);
-        if (setup.PagesFor(device?.Panels ?? []).Count == 0)
+        if (device?.Panel is { } panel && setup.HasPanel(panel))
         {
-            LogUnassigned(log, hardwareId, settings.FilePath, shortId, AvailablePanels);
+            LogAssigned(log, hardwareId, device.Name ?? shortId, panel);
         }
         else
         {
-            LogAssigned(log, hardwareId, device!.Name ?? shortId, string.Join(", ", device.Panels));
+            LogUnassigned(log, hardwareId, settings.FilePath, shortId, AvailablePanels);
         }
     }
 
@@ -144,10 +144,10 @@ public sealed partial class BridgeHostedService(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Device {HardwareId} ({Name}) shows {Panels}")]
-    private static partial void LogAssigned(ILogger logger, string hardwareId, string name, string panels);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Device {HardwareId} ({Name}) shows {Panel}")]
+    private static partial void LogAssigned(ILogger logger, string hardwareId, string name, string panel);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Device {HardwareId} has no panels assigned. In {Path}, add \"{ShortId}\" under \"devices\" with the panels it shows: {Available}")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Device {HardwareId} has no panels assigned. In {Path}, add \"{ShortId}\" under \"devices\" with the panel it shows: {Available}")]
     private static partial void LogUnassigned(ILogger logger, string hardwareId, string path, string shortId, string available);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Settings for device {Device} name panel \"{Panel}\", which does not exist. Panels: {Available}")]
