@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using Crowsnest.Core.Application.Panels;
 using Crowsnest.Device;
 using Crowsnest.Host;
+using Crowsnest.Tray.Diagnostics;
 using Crowsnest.Tray.Settings;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
@@ -36,6 +37,7 @@ public sealed class TrayIconController : IDisposable
     private readonly PanelSetup _setup;
     private readonly SettingsStore _settings;
     private readonly StartupRegistration _startup;
+    private readonly LogTail _logTail;
     private readonly Dispatcher _dispatcher;
     private readonly TaskbarIcon _icon;
     private readonly ContextMenu _menu = new();
@@ -43,15 +45,22 @@ public sealed class TrayIconController : IDisposable
     private HealthLight? _shownLight;
     private bool _refreshQueued;
     private SettingsWindow? _settingsWindow;
+    private DiagnosticsWindow? _diagnosticsWindow;
     private string? _notifiedDevice;
 
     public TrayIconController(
-        HealthSnapshotProvider health, PanelSetup setup, SettingsStore settings, StartupRegistration startup, Dispatcher dispatcher)
+        HealthSnapshotProvider health,
+        PanelSetup setup,
+        SettingsStore settings,
+        StartupRegistration startup,
+        LogTail logTail,
+        Dispatcher dispatcher)
     {
         _health = health;
         _setup = setup;
         _settings = settings;
         _startup = startup;
+        _logTail = logTail;
         _dispatcher = dispatcher;
 
         _icon = new TaskbarIcon
@@ -77,6 +86,7 @@ public sealed class TrayIconController : IDisposable
         _health.Changed -= QueueRefresh;
         _health.UnassignedDeviceArrived -= OnUnassignedDeviceArrived;
         _settingsWindow?.Close();
+        _diagnosticsWindow?.Close();
         _icon.Dispose();
     }
 
@@ -139,7 +149,8 @@ public sealed class TrayIconController : IDisposable
         _menu.Items.Add(new Separator());
         _menu.Items.Add(Item("Settings...", () => OpenSettings(null)));
         _menu.Items.Add(Item("Open settings file", OpenSettingsFile));
-        _menu.Items.Add(Item("Open logs folder", OpenLogsFolder));
+        _menu.Items.Add(Item("Diagnostics...", OpenDiagnostics));
+        _menu.Items.Add(Item("Open logs folder", App.OpenLogsFolder));
         MenuItem startup = Item("Start with Windows", ToggleStartup);
         startup.IsCheckable = true;
         startup.IsChecked = _startup.IsEnabled;
@@ -212,10 +223,23 @@ public sealed class TrayIconController : IDisposable
         }
     }
 
-    private static void OpenLogsFolder()
+    /// <summary>One window at a time: a second ask brings it forward.</summary>
+    private void OpenDiagnostics()
     {
-        Directory.CreateDirectory(App.LogsFolder);
-        Process.Start(new ProcessStartInfo(App.LogsFolder) { UseShellExecute = true })?.Dispose();
+        if (_diagnosticsWindow is null)
+        {
+            DiagnosticsViewModel model = new(typeof(App).Assembly.GetName().Version?.ToString() ?? "unknown");
+            _diagnosticsWindow = new DiagnosticsWindow(model, () => _health.Current, _logTail);
+            _diagnosticsWindow.Closed += (_, _) => _diagnosticsWindow = null;
+            _diagnosticsWindow.Show();
+        }
+
+        if (_diagnosticsWindow.WindowState == WindowState.Minimized)
+        {
+            _diagnosticsWindow.WindowState = WindowState.Normal;
+        }
+
+        _diagnosticsWindow.Activate();
     }
 
     /// <summary>A line of status, not a command. Underscores doubled, or WPF takes them as access keys.</summary>

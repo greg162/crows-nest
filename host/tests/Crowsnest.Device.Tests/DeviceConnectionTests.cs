@@ -218,6 +218,55 @@ public class DeviceConnectionTests
     }
 
     [Fact]
+    public async Task TheLinkCountsFramesBothWaysAndTheOnesItIgnored()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new SimulatedDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
+
+        // No heartbeat during the test, so the counts are exact.
+        await using var device = new DeviceConnection(hostEnd, FastHandshake with { PingInterval = TimeSpan.FromHours(1) });
+        await device.ConnectAsync(CancellationToken.None);
+        LinkStats before = device.Stats;
+
+        await fake.SendRawAsync("this is not a frame at all\n");
+        await fake.SendRawAsync("{\"v\":2,\"t\":\"teleport\"}\n");
+        await fake.TurnEncoderAsync(1);
+        await FirstInputAsync(device);
+        await device.RenderAsync(SelfTestFrames.HelloWorld(), CancellationToken.None);
+
+        LinkStats after = device.Stats;
+        Assert.Equal(before.FramesIn + 3, after.FramesIn);
+        Assert.Equal(before.FramesIgnored + 2, after.FramesIgnored);
+        Assert.Equal(before.FramesOut + 1, after.FramesOut);
+        Assert.Equal(2, before.FramesOut); // the hello and its ack
+        Assert.Equal(0, after.Restarts);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(fakeLoop);
+    }
+
+    [Fact]
+    public async Task ARestartIsCountedAndTheHeartbeatGivesTheRoundTrip()
+    {
+        (LoopbackTransport hostEnd, LoopbackTransport deviceEnd) = LoopbackTransport.CreatePair();
+        await using var fake = new SimulatedDevice(deviceEnd);
+        Task fakeLoop = fake.RunAsync(CancellationToken.None);
+
+        await using var device = new DeviceConnection(hostEnd, FastHandshake);
+        await device.ConnectAsync(CancellationToken.None);
+        Assert.Null(device.Stats.RoundTrip);
+
+        await fake.SendHelloAsync();
+
+        await Eventually(() => device.Stats is { Restarts: 1, RoundTrip: not null });
+        Assert.True(device.Stats.RoundTrip >= TimeSpan.Zero);
+
+        await device.DisposeAsync();
+        await AwaitQuietly(fakeLoop);
+    }
+
+    [Fact]
     public async Task ARoundTripIsMeasuredAgainstADeviceThatEchoesTheTimestampFaithfully()
     {
         // MeasureRoundTripAsync keys on Stopwatch.GetTimestamp(), which is well past

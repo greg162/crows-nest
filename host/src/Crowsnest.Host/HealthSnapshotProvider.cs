@@ -70,7 +70,12 @@ public sealed partial class HealthSnapshotProvider : IDisposable
     {
         DeviceSettings? entry = settings.Find(device.Identity.HardwareId);
         string? panel = _setup.HasPanel(entry?.Panel) ? entry?.Panel : null; // an unknown panel shows nothing
-        return new DeviceHealth(device.Identity, device.Port, entry?.Name ?? device.Identity.ShortId, panel);
+        return new DeviceHealth(
+            device.Identity,
+            device.Port,
+            entry?.Name ?? device.Identity.ShortId,
+            panel,
+            device.Connection.Stats);
     }
 
     private void OnSettingsChanged(BridgeSettings changed) => Raise(Changed);

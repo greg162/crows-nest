@@ -14,7 +14,8 @@ public enum HealthLight
 /// <summary>A connected device as the tray shows it.</summary>
 /// <param name="Name">From settings, or the short id when settings give none.</param>
 /// <param name="Panel">The panel it shows; null when it shows the unassigned screen.</param>
-public sealed record DeviceHealth(DeviceIdentity Identity, string Port, string Name, string? Panel)
+/// <param name="Link">The link's counters, for the diagnostics window; null if unknown.</param>
+public sealed record DeviceHealth(DeviceIdentity Identity, string Port, string Name, string? Panel, LinkStats? Link = null)
 {
     public bool Assigned => Panel is not null;
 }

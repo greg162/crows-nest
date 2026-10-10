@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using Crowsnest.Core.Application.Panels;
 using Crowsnest.Host;
+using Crowsnest.Tray.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -24,6 +26,9 @@ public partial class App : System.Windows.Application
     private SingleInstanceGuard? _guard;
     private IHost? _host;
     private TrayIconController? _tray;
+
+    /// <summary>The recent log, for the diagnostics window.</summary>
+    private readonly LogTail _logTail = new();
 
     /// <summary><c>%LOCALAPPDATA%\Crowsnest\logs</c>, beside settings.json.</summary>
     public static string LogsFolder { get; } = Path.Combine(Path.GetDirectoryName(SettingsStore.DefaultPath)!, "logs");
@@ -55,6 +60,7 @@ public partial class App : System.Windows.Application
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+            .WriteTo.Sink(_logTail)
             .CreateLogger();
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -77,6 +83,7 @@ public partial class App : System.Windows.Application
                 _host.Services.GetRequiredService<PanelSetup>(),
                 _host.Services.GetRequiredService<SettingsStore>(),
                 new StartupRegistration(Environment.ProcessPath!),
+                _logTail,
                 Dispatcher);
         }
         catch (Exception error)
@@ -120,6 +127,12 @@ public partial class App : System.Windows.Application
         Log.CloseAndFlush();
         _guard?.Dispose();
         base.OnExit(e);
+    }
+
+    public static void OpenLogsFolder()
+    {
+        Directory.CreateDirectory(LogsFolder);
+        Process.Start(new ProcessStartInfo(LogsFolder) { UseShellExecute = true })?.Dispose();
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

@@ -31,6 +31,13 @@ public sealed class DeviceConnection : IDevice
     private Task? _readLoop;
     private Task? _heartbeat;
     private long _outstandingPings;
+    private long _lastHeartbeat;
+    private long _roundTripTicks = -1;
+    private long _framesIn;
+    private long _framesOut;
+    private long _framesIgnored;
+    private int _restarts;
+    private DateTimeOffset _connectedAt;
     private volatile bool _handshakeDone;
     private Exception? _fault;
     private bool _disposed;
@@ -68,6 +75,22 @@ public sealed class DeviceConnection : IDevice
 
     public IAsyncEnumerable<DeviceInputEvent> Inputs => _inputs.Reader.ReadAllAsync(_shutdown.Token);
 
+    /// <summary>The link's counters, read fresh each time. Safe from any thread.</summary>
+    public LinkStats Stats
+    {
+        get
+        {
+            long roundTrip = Interlocked.Read(ref _roundTripTicks);
+            return new LinkStats(
+                _connectedAt,
+                Interlocked.Read(ref _framesIn),
+                Interlocked.Read(ref _framesOut),
+                Interlocked.Read(ref _framesIgnored),
+                Volatile.Read(ref _restarts),
+                roundTrip < 0 ? null : TimeSpan.FromTicks(roundTrip));
+        }
+    }
+
     /// <summary>
     /// Opens the transport and completes the hello handshake. Throws
     /// <see cref="TimeoutException"/> when the device never identifies itself, which is how
@@ -85,7 +108,7 @@ public sealed class DeviceConnection : IDevice
         _readLoop = Task.Run(() => ReadLoopAsync(_shutdown.Token), CancellationToken.None);
 
         _state.OnNext(DeviceConnectionState.Handshaking);
-        await Writer.WriteAsync(new HostHello { Host = _options.HostName }, ct);
+        await SendAsync(new HostHello { Host = _options.HostName }, ct);
 
         DeviceHello hello;
         using (var handshake = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdown.Token))
@@ -108,13 +131,21 @@ public sealed class DeviceConnection : IDevice
 
         await SendHelloAckAsync(ct);
 
+        _connectedAt = _time.GetUtcNow();
         _handshakeDone = true;
         _state.OnNext(DeviceConnectionState.Connected);
         _heartbeat = Task.Run(() => HeartbeatLoopAsync(_shutdown.Token), CancellationToken.None);
     }
 
+    /// <summary>Every frame to the device goes through here, so it is counted.</summary>
+    private ValueTask SendAsync(HostMessage message, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _framesOut);
+        return Writer.WriteAsync(message, ct);
+    }
+
     private ValueTask SendHelloAckAsync(CancellationToken ct) =>
-        Writer.WriteAsync(
+        SendAsync(
             new HostHelloAck
             {
                 Config = new HostConfig
@@ -155,6 +186,7 @@ public sealed class DeviceConnection : IDevice
 
         Capabilities = ProtocolCodec.ToCapabilities(hello);
         Identity = identity;
+        Interlocked.Increment(ref _restarts);
 
         _state.OnNext(DeviceConnectionState.Handshaking);
         await SendHelloAckAsync(ct);
@@ -164,11 +196,11 @@ public sealed class DeviceConnection : IDevice
     public Task RenderAsync(DisplayFrame frame, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        return Writer.WriteAsync(ProtocolCodec.ToWire(frame), ct).AsTask();
+        return SendAsync(ProtocolCodec.ToWire(frame), ct).AsTask();
     }
 
     public Task NoticeAsync(string kind, CancellationToken ct) =>
-        Writer.WriteAsync(new HostNotice { Kind = kind }, ct).AsTask();
+        SendAsync(new HostNotice { Kind = kind }, ct).AsTask();
 
     /// <summary>
     /// Round-trip time for one ping. Spike 0(c) requires this under 20 ms over USB CDC,
@@ -187,7 +219,7 @@ public sealed class DeviceConnection : IDevice
 
         try
         {
-            await Writer.WriteAsync(new HostPing { Timestamp = stamp }, ct);
+            await SendAsync(new HostPing { Timestamp = stamp }, ct);
 
             // Bounded on purpose. A pong is matched by the `ts` the device echoes, so a
             // device that echoes anything else - truncating it, rounding it, inventing it -
@@ -214,8 +246,10 @@ public sealed class DeviceConnection : IDevice
         {
             await foreach (byte[] frame in _reader!.ReadAllAsync(ct))
             {
+                Interlocked.Increment(ref _framesIn);
                 if (!ProtocolCodec.TryDecodeDevice(frame, out DeviceMessage? message) || message is null)
                 {
+                    Interlocked.Increment(ref _framesIgnored);
                     continue;
                 }
 
@@ -295,6 +329,10 @@ public sealed class DeviceConnection : IDevice
                 {
                     waiter.TrySetResult();
                 }
+                else if (pong.Timestamp == Interlocked.Read(ref _lastHeartbeat))
+                {
+                    Interlocked.Exchange(ref _roundTripTicks, _time.GetElapsedTime(pong.Timestamp).Ticks);
+                }
 
                 break;
 
@@ -321,9 +359,10 @@ public sealed class DeviceConnection : IDevice
                     return;
                 }
 
-                await Writer.WriteAsync(
-                    new HostPing { Timestamp = _time.GetUtcNow().ToUnixTimeMilliseconds() },
-                    ct);
+                // Stamped like a measurement, so the pong gives the round trip for diagnostics.
+                long stamp = _time.GetTimestamp();
+                Interlocked.Exchange(ref _lastHeartbeat, stamp);
+                await SendAsync(new HostPing { Timestamp = stamp }, ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
