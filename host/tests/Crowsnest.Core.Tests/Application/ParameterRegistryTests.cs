@@ -95,14 +95,19 @@ public class ParameterRegistryTests
     }
 
     [Fact]
-    public void TheGatewaySubscribesToEveryParameterAndTheSpacingWatches()
+    public void TheGatewaySubscribesToEveryParameterAndEveryWatch()
     {
         Assert.Equal(
-            ["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active", "nav2.standby", "nav2.active", "xpdr.code", "com1.spacing", "com2.spacing"],
+            ["com1.standby", "com1.active", "com2.standby", "com2.active", "nav1.standby", "nav1.active", "nav2.standby", "nav2.active", "xpdr.code", "com1.spacing", "com2.spacing", "xpdr.mode", "xpdr.ident"],
             Registry.Subscriptions.Select(s => s.Id.Key));
         Assert.Equal(Registry.Subscriptions.Count, Registry.Subscriptions.Select(s => s.Read.Name).Distinct().Count());
         Assert.Equal(
-            [new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:1", "Enum", 1), new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:2", "Enum", 1)],
+            [
+                new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:1", "Enum", 1),
+                new ReadBinding(ReadSource.SimVar, "COM SPACING MODE:2", "Enum", 1),
+                new ReadBinding(ReadSource.SimVar, "TRANSPONDER STATE:1", "Enum", 1),
+                new ReadBinding(ReadSource.SimVar, "TRANSPONDER IDENT:1", "Bool", 1),
+            ],
             Registry.Watches.Select(w => w.Read));
     }
 

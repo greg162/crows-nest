@@ -79,7 +79,10 @@ Say you're adding the ADF.
 - `panel.AddFormatter("adfKhz", new MyFormatter())`: a way of showing a value.
 - `panel.AddBehaviour(new MyBehaviour())`: logic that reacts to the sim, such as COM's grid
   following the aircraft's 8.33 kHz switch. It sees every sim snapshot and can replace a grid;
-  `Validate` lets it check the finished registry at startup.
+  `Validate` lets it check the finished registry at startup. `OnCommand` sees gestures your
+  page has no other use for (a tap with no `swapEvent`), and the context can `Invoke` a sim
+  event or `SetCaption` the line under a `framed` page's value. See
+  `Transponder/TransponderBehaviour.cs` (IDENT, and the mode under the code).
 
 Create anything that keeps state inside `Configure`, not in a field, so each load gets its own.
 

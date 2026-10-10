@@ -39,6 +39,12 @@ public static class ConsoleDeviceRenderer
             Blank(sb);
         }
 
+        if (state.Page.Caption is { } caption)
+        {
+            Centre(sb, state.Page.CaptionLit ? $"* {caption} *" : caption);
+            Blank(sb);
+        }
+
         Left(sb, $"sim: {state.Sim}    rev {state.Revision}  ack {state.Ack}");
         sb.Append("    ╰").Append('─', Width).AppendLine("╯");
         return sb.ToString();

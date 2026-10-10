@@ -522,6 +522,8 @@ public sealed class PageNavigator
 
 **`framed` layout, firmware 0.4.0 (2026-10-08).** One value in the P180 frame: the same white frame and border title as `pair`, the value alone in green (amber while pending), in Montserrat Medium at 72 px with 10 px letter spacing so the cursor's underline sits clearly under one digit. The 72 px font is generated (`crowsnest_ui/fonts/ui_font_value_72.c`, digits and `+ , - . /` only, falling back to the 48 px built-in; the command to regenerate it is in the file). The frame moved out of `radio_pair.c` into `ui_frame.c`, so both views draw it identically. Used by the transponder, and meant for later single-value pages such as the autopilot's. `single` is unchanged and still draws the NOT ASSIGNED screen. Host: `PageLayout.FramedValue`, wire name `framed`; `SelfTestFrames` gained a framed example.
 
+**Caption, firmware 0.4.1 (2026-10-09).** `framed` draws the page's `caption` (§6.1) centred under the frame in Montserrat 14, light grey, white while `captionLit`. Its line is always reserved, so the frame does not move as a caption comes and goes; the frame sits about 12 px higher than in 0.4.0 as a result.
+
 ### 5.6 Ports
 
 `namespace Crowsnest.Core.Application.Ports`
@@ -662,7 +664,7 @@ public interface IPanelBehaviour
 {
     void OnSnapshot(ParameterSnapshot snapshot, IPanelContext context);
     void Validate(ParameterRegistry registry) { }   // against the finished registry
-    // void OnCommand(BridgeCommand command, IPanelContext context);   with the transponder
+    void OnCommand(BridgeCommand command, PanelPage page, IPanelContext context) { }   // built 2026-10-09
 }
 ```
 
@@ -765,6 +767,8 @@ public sealed class PanelComposer
 - **Tests.** `PanelCatalogTests` fails if an `IPanelModule` is missing from the catalog, or if an embedded file under `Panels/` belongs to no registered module (both messages say what to add). It also loads each module on its own, which proves it does not lean on another, and checks that demo values are on their grids. `ArchitectureTests` reads the source (so uses inside method bodies count): `Domain/` and `Application/` never mention `Crowsnest.Core.Panels`; no `Panels/X` mentions `Panels.Y`; nothing else under `src/` mentions a panel family's namespace. `PanelComposerTests` covers the ownership rules.
 - **Still open:** capability filtering (`PanelRequirements`, `PanelComposer` taking `DeviceCapabilities`); page assignment per device (§6.2).
 
+**`OnCommand` and captions, 2026-10-09 (transponder IDENT and mode).** `IPanelBehaviour.OnCommand(command, page, context)` (default no-op) sees a command the page itself has no use for, today a tap on a page without a `swapEvent`; every behaviour sees it, so each checks the page is its own. `IPanelContext` gained `Invoke(eventName)` (a sim event with no payload, sent after the call; no flush of a value being dialled) and `SetCaption(pageId, PageCaption?)`, which keeps a caption per page and redraws only the devices showing that page; an unchanged caption redraws nothing. `PageDescriptor.Caption` carries it to the wire (§6.1). `TransponderBehaviour` uses both: watches `xpdr.mode` (`TRANSPONDER STATE:1`, Enum: OFF, STBY, TEST, ON, ALT, GND) and `xpdr.ident` (`TRANSPONDER IDENT:1`, Bool); the caption is the mode, dim, or `"ALT   IDENT"` lit while the sim reports ident (the sim ends it, no host timer); a tap sends `XPNDR_IDENT_ON`. Decided with Greg: **VFR and mode changes are left out** — a swipe that hits them by accident (STBY especially hides the aircraft from ATC) costs too much; the mode is changed in the cockpit. A mistaken IDENT costs a flash on a controller's screen.
+
 ## 6. Crowsnest.Device
 
 ```csharp
@@ -837,6 +841,12 @@ Newline-delimited JSON, UTF-8, one object per line. Chosen over binary framing b
  "page":{"id":"ap.alt","title":"ALTITUDE","layout":"single","index":4,"count":6},
  "fields":[{"role":"primary","label":"FT","text":"12,000","cursor":[0,2]}]}
 
+// Transponder — the framed layout, with a caption under the frame (firmware 0.4.1 on)
+{"v":2,"t":"state","rev":1059,"ack":47,"sim":"connected",
+ "page":{"id":"xpdr","title":"XPDR","layout":"framed","index":4,"count":5,
+         "caption":"ALT   IDENT","captionLit":true},
+ "fields":[{"role":"primary","label":"SQUAWK","text":"7000","cursor":[3,4]}]}
+
 {"v":2,"t":"notice","kind":"aircraft_rejected"}
 {"v":2,"t":"ping","ts":918273}
 ```
@@ -847,6 +857,7 @@ Protocol rules:
 - `rev` is monotonic; the device discards any frame with a lower `rev` than the last applied.
 - `ack` echoes the highest input `seq` the host has processed, letting the device detect dropped input.
 - `cursor` is a `[start, end)` character range into `text`.
+- `caption` (optional) is a short line of text the layout draws under its value, dim, or bright when `captionLit` is true; both are omitted when there is none. Only `framed` draws it so far (0.4.1); other layouts ignore it. Set by a panel behaviour through `IPanelContext.SetCaption` (§5.8).
 - `ping`/`pong` every 2 s; three missed pongs on either side triggers a reconnect.
 - `ts` is an **opaque 64-bit correlation token, not a time**. The host chooses the value, the device echoes it back unchanged in the `pong`, and the device never interprets, rescales or narrows it. The host matches a pong to its outstanding ping by that value alone, so a device that echoes anything else matches nothing. This is the contract a 32-bit `ts` in the panel firmware broke during first bring-up: the host keys its in-flight pings on `Stopwatch.GetTimestamp()`, which passes `INT32_MAX` a few minutes after boot, so every pong came back saturated at `2147483647` and the handshake completed but the first measurement never returned. Both ends carry this as a 64-bit integer. Every host-side wait on a pong is also bounded, so a device that gets this wrong surfaces as a named timeout rather than a silent hang on a link that still looks alive.
 - Unknown message types and unknown fields are ignored rather than treated as errors, so the two sides version independently.

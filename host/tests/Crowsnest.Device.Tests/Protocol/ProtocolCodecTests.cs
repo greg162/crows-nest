@@ -53,6 +53,25 @@ public class ProtocolCodecTests
         Assert.False(json.RootElement.GetProperty("fields")[0].TryGetProperty("cursor", out _));
     }
 
+    [Fact]
+    public void ACaptionGoesOnThePageAndIsOmittedWhenThereIsNone()
+    {
+        DisplayFrame example = SelfTestFrames.FramedExample();
+        DisplayFrame framed = example with { Page = example.Page with { Caption = null } };
+        DisplayFrame lit = framed with { Page = framed.Page with { Caption = new PageCaption("ALT   IDENT", Lit: true) } };
+        DisplayFrame dim = framed with { Page = framed.Page with { Caption = new PageCaption("ALT") } };
+
+        using JsonDocument none = JsonDocument.Parse(Serialise(ProtocolCodec.ToWire(framed)));
+        using JsonDocument litJson = JsonDocument.Parse(Serialise(ProtocolCodec.ToWire(lit)));
+        using JsonDocument dimJson = JsonDocument.Parse(Serialise(ProtocolCodec.ToWire(dim)));
+
+        Assert.False(none.RootElement.GetProperty("page").TryGetProperty("caption", out _));
+        Assert.Equal("ALT   IDENT", litJson.RootElement.GetProperty("page").GetProperty("caption").GetString());
+        Assert.True(litJson.RootElement.GetProperty("page").GetProperty("captionLit").GetBoolean());
+        Assert.Equal("ALT", dimJson.RootElement.GetProperty("page").GetProperty("caption").GetString());
+        Assert.False(dimJson.RootElement.GetProperty("page").TryGetProperty("captionLit", out _));
+    }
+
     [Theory]
     [InlineData(PageLayout.ActiveStandbyPair, "pair")]
     [InlineData(PageLayout.SingleValue, "single")]

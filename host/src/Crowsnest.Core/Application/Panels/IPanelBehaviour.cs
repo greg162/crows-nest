@@ -9,13 +9,20 @@ namespace Crowsnest.Core.Application.Panels;
 /// following the aircraft's spacing mode. Optional: most panels have none.
 ///
 /// Called on the coordinator's one loop, like everything else in the engine, so it needs no
-/// locking. This is the part of the spec's interface that something uses today; <c>OnCommand</c>
-/// arrives with the transponder.
+/// locking.
 /// </summary>
 public interface IPanelBehaviour
 {
     /// <summary>Sees every sim snapshot, before the parameter's own session does.</summary>
     void OnSnapshot(ParameterSnapshot snapshot, IPanelContext context);
+
+    /// <summary>
+    /// Sees a command the page itself has no use for, such as a tap on a page with no swap
+    /// event: the transponder's IDENT. Every behaviour sees it, so check the page is yours.
+    /// </summary>
+    void OnCommand(BridgeCommand command, PanelPage page, IPanelContext context)
+    {
+    }
 
     /// <summary>
     /// Checks the behaviour against the finished registry, so a bad reference in the JSON fails
@@ -37,4 +44,11 @@ public interface IPanelContext
     /// sim snaps its own values when a mode changes and reports them like any other change.
     /// </summary>
     void ReplaceGrid(ParameterId id, IValueGrid grid);
+
+    /// <summary>Sets the line a page's layout draws under its value; null clears it. Devices showing the page redraw.</summary>
+    /// <exception cref="ArgumentException">No page has that id.</exception>
+    void SetCaption(string pageId, PageCaption? caption);
+
+    /// <summary>Sends a sim event with no payload. A value still being dialled is not flushed first.</summary>
+    void Invoke(string eventName);
 }

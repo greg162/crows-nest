@@ -33,6 +33,7 @@ internal sealed class Demo : IAsyncDisposable
     private static readonly ParameterId ComStandby = new("com1.standby");
     private static readonly ParameterId ComActive = new("com1.active");
     private static readonly ParameterId ComSpacing = new("com1.spacing");
+    private static readonly ParameterId XpdrIdent = new("xpdr.ident");
 
     private readonly CancellationTokenSource _stop = new();
     private readonly SimulatedDevice _simulated;
@@ -63,6 +64,7 @@ internal sealed class Demo : IAsyncDisposable
         {
             FakeParameterGateway fake = new(Setup);
             fake.On("COM_1_SPACING_MODE_SWITCH", () => ToggleComSpacing(fake));
+            fake.On("XPNDR_IDENT_ON", () => Ident(fake));
             Fake = fake;
             _sim = Fake;
             _logLines = 6;
@@ -185,6 +187,15 @@ internal sealed class Demo : IAsyncDisposable
             fake.SetFromCockpit(ComStandby, 121_500);
             return Task.CompletedTask;
         });
+        await Step("long presses to the transponder: the mode under the code", async () =>
+        {
+            while (demo.Latest?.Page.Id != "xpdr")
+            {
+                await demo._simulated.PressKnobAsync(held: true);
+                await Task.Delay(50);
+            }
+        });
+        await Step("tap: IDENT, lit until the sim ends it", () => demo._simulated.TapAsync(240, 240).AsTask());
     }
 
     /// <summary>
@@ -202,6 +213,13 @@ internal sealed class Demo : IAsyncDisposable
             fake.SetFromCockpit(ComActive, grid.Snap(fake.Value(ComActive)));
             fake.SetFromCockpit(ComStandby, grid.Snap(fake.Value(ComStandby)));
         }
+    }
+
+    /// <summary>IDENT on, then off again a few seconds later, as the sim ends it by itself.</summary>
+    private static void Ident(FakeParameterGateway fake)
+    {
+        fake.SetFromCockpit(XpdrIdent, 1);
+        _ = Task.Delay(TimeSpan.FromSeconds(5)).ContinueWith(_ => fake.SetFromCockpit(XpdrIdent, 0), TaskScheduler.Default);
     }
 
     private static async Task<Demo> StartAsync(bool msfs)
@@ -273,7 +291,7 @@ internal sealed class Demo : IAsyncDisposable
             if (fullScreen)
             {
                 screen.AppendLine();
-                screen.AppendLine("    ←/→ turn (shift ×5)   space cursor   enter next page   t swap   q quit");
+                screen.AppendLine("    ←/→ turn (shift ×5)   space cursor   enter next page   t tap (swap, IDENT)   q quit");
                 screen.AppendLine(Fake is null
                     ? "    s send the spacing switch to the sim"
                     : "    s cockpit spacing switch   k cockpit knob   i sim ignores writes");

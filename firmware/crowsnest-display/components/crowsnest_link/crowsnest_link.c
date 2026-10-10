@@ -309,6 +309,8 @@ typedef struct {
     char    page_layout[12];
     double  page_index;
     double  page_count;
+    char    page_caption[CN_TITLE_MAX];
+    bool    caption_lit;
     uint8_t field_count;
     cn_field_t fields[CN_FIELDS_MAX];
 } scratch_t;
@@ -373,6 +375,12 @@ static bool page_member(jp_t *j, const char *key, void *user, int depth)
     }
     if (strcmp(key, "count") == 0) {
         return jp_number(j, &s->page_count);
+    }
+    if (strcmp(key, "caption") == 0) {
+        return jp_string(j, s->page_caption, sizeof s->page_caption);
+    }
+    if (strcmp(key, "captionLit") == 0) {
+        return jp_keyword(j, "true", &s->caption_lit, true) || jp_keyword(j, "false", &s->caption_lit, false);
     }
     return jp_skip_value(j, depth);
 }
@@ -528,6 +536,8 @@ bool cn_link_parse(const char *json, size_t len, cn_msg_t *out)
         st->field_count = s.field_count;
         memcpy(st->page_id, s.page_id, sizeof st->page_id);
         memcpy(st->page_title, s.page_title, sizeof st->page_title);
+        memcpy(st->page_caption, s.page_caption, sizeof st->page_caption);
+        st->caption_lit = s.caption_lit;
         memcpy(st->fields, s.fields, sizeof st->fields);
 
         /* A cursor the host computed against a longer string than this firmware can hold

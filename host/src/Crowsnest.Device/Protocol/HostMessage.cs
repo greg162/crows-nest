@@ -77,6 +77,16 @@ public sealed record WirePage
 
     [JsonPropertyName("count")]
     public int Count { get; init; }
+
+    /// <summary>A short line under the value; omitted when there is none. Only "framed" draws it so far.</summary>
+    [JsonPropertyName("caption")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Caption { get; init; }
+
+    /// <summary>The caption drawn bright rather than dim.</summary>
+    [JsonPropertyName("captionLit")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CaptionLit { get; init; }
 }
 
 public sealed record WireField

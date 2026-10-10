@@ -13,5 +13,16 @@
     "read":    { "source": "simvar", "name": "TRANSPONDER CODE:1", "unit": "BCO16" },
     "write":   { "mode": "keyEvent", "target": "XPNDR_SET", "encoding": "bcd16" },
     "format":  "code4"
+  },
+  {
+    // The mode: 0 off, 1 standby, 2 test, 3 on, 4 alt, 5 ground. Shown under the code by
+    // TransponderBehaviour, never set from the panel (changed in the cockpit).
+    "kind": "watch", "id": "xpdr.mode",
+    "read": { "source": "simvar", "name": "TRANSPONDER STATE:1", "unit": "Enum" }
+  },
+  {
+    // 1 while IDENT is on. A tap sends XPNDR_IDENT_ON; the sim turns it off again.
+    "kind": "watch", "id": "xpdr.ident",
+    "read": { "source": "simvar", "name": "TRANSPONDER IDENT:1", "unit": "Bool" }
   }
 ]

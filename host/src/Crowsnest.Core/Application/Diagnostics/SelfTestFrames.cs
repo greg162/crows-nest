@@ -56,7 +56,7 @@ public static class SelfTestFrames
         new(
             Revision: revision,
             Sim: SimConnectionState.Disconnected,
-            Page: new PageDescriptor("selftest.framed", "XPDR", PageLayout.FramedValue, Index: 3, Count: 4),
+            Page: new PageDescriptor("selftest.framed", "XPDR", PageLayout.FramedValue, Index: 3, Count: 4, new PageCaption("ALT")),
             Fields:
             [
                 new FieldDescriptor(FieldRole.Primary, "SQUAWK", "7000", CursorSpan: 3..4),

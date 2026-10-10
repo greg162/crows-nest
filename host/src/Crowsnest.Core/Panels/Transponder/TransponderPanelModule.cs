@@ -5,7 +5,8 @@ namespace Crowsnest.Core.Panels.Transponder;
 /// <summary>
 /// The transponder's squawk code (spec §5.8): the parameter in <c>xpdr.parameters.json</c>, the
 /// page in <c>View/xpdr.view.json</c>. The code is four octal digits, which needs the
-/// <see cref="DigitGrid"/>; a short press moves the cursor from digit to digit.
+/// <see cref="DigitGrid"/>; a short press moves the cursor from digit to digit. A tap is IDENT
+/// and the mode shows under the code: <see cref="TransponderBehaviour"/>.
 /// </summary>
 public sealed class TransponderPanelModule : IPanelModule
 {
@@ -14,6 +15,7 @@ public sealed class TransponderPanelModule : IPanelModule
 
     public string Id => "xpdr";
 
-    public void Configure(PanelBuilder panel) =>
-        panel.AddGridType(DigitsGridType, spec => new DigitGrid(spec.RequireInt("digits"), spec.RequireInt("radix")));
+    public void Configure(PanelBuilder panel) => panel
+        .AddGridType(DigitsGridType, spec => new DigitGrid(spec.RequireInt("digits"), spec.RequireInt("radix")))
+        .AddBehaviour(new TransponderBehaviour());
 }

@@ -27,6 +27,8 @@ public static class ProtocolCodec
                 Layout = ToWire(frame.Page.Layout),
                 Index = frame.Page.Index,
                 Count = frame.Page.Count,
+                Caption = frame.Page.Caption?.Text,
+                CaptionLit = frame.Page.Caption?.Lit ?? false,
             },
             Fields = [.. frame.Fields.Select(ToWire)],
         };

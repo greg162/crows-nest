@@ -59,8 +59,14 @@ public sealed class PanelEngine : IPanelContext
     private readonly IReadOnlyList<IPanelBehaviour> _behaviours;
     private readonly Dictionary<string, DeviceView> _devices = new(StringComparer.Ordinal);
 
-    // Parameters whose look changed while behaviours ran, so the devices showing them redraw.
+    // Captions the behaviours have set, by page id.
+    private readonly Dictionary<string, PageCaption> _captions = new(StringComparer.Ordinal);
+
+    // What behaviours did while they ran: parameters whose look changed and pages whose caption
+    // changed, so the devices showing them redraw, and sim events to send.
     private readonly HashSet<ParameterId> _behaviourChanged = [];
+    private readonly HashSet<string> _captionChanged = new(StringComparer.Ordinal);
+    private readonly List<SimCommand> _behaviourSim = [];
 
     private SimConnectionState _sim = SimConnectionState.Disconnected;
 
@@ -192,7 +198,7 @@ public sealed class PanelEngine : IPanelContext
 
         // Behaviours see everything first, watches included: a spacing change must rebuild the
         // grid before a value on the new grid is judged against the old one.
-        _behaviourChanged.Clear();
+        StartBehaviours();
         foreach (IPanelBehaviour behaviour in _behaviours)
         {
             behaviour.OnSnapshot(snapshot, this);
@@ -210,7 +216,7 @@ public sealed class PanelEngine : IPanelContext
             }
         }
 
-        return Effects([], changed);
+        return Effects([.. _behaviourSim], changed, changedPages: _captionChanged);
     }
 
     public PanelEffects OnInput(string deviceId, DeviceInputEvent input, DateTimeOffset now)
@@ -309,9 +315,26 @@ public sealed class PanelEngine : IPanelContext
             case BridgeCommand.GoToPage go when pages.TryGoTo(go.PageId):
                 return Redraw(view);
 
+            // Anything the page has no use for, such as a tap with no swap event, is the
+            // behaviours' to take: the transponder's IDENT.
             default:
-                return Effects([], [], toAck);
+            {
+                StartBehaviours();
+                foreach (IPanelBehaviour behaviour in _behaviours)
+                {
+                    behaviour.OnCommand(command, pages.Current, this);
+                }
+
+                return Effects([.. _behaviourSim], [.. _behaviourChanged], toAck, _captionChanged);
+            }
         }
+    }
+
+    private void StartBehaviours()
+    {
+        _behaviourChanged.Clear();
+        _captionChanged.Clear();
+        _behaviourSim.Clear();
     }
 
     ParameterDefinition IPanelContext.Parameter(ParameterId id) => _sessions[id].Parameter;
@@ -327,16 +350,53 @@ public sealed class PanelEngine : IPanelContext
         }
     }
 
+    void IPanelContext.SetCaption(string pageId, PageCaption? caption)
+    {
+        if (!_pageIds.Contains(pageId))
+        {
+            throw new ArgumentException($"There is no page '{pageId}' to caption.", nameof(pageId));
+        }
+
+        if (_captions.GetValueOrDefault(pageId) == caption)
+        {
+            return;
+        }
+
+        if (caption is null)
+        {
+            _captions.Remove(pageId);
+        }
+        else
+        {
+            _captions[pageId] = caption;
+        }
+
+        _captionChanged.Add(pageId);
+    }
+
+    void IPanelContext.Invoke(string eventName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(eventName);
+        _behaviourSim.Add(new SimCommand.Invoke(eventName));
+    }
+
     /// <summary>
-    /// The sim commands, a frame for every device showing a changed parameter, and one for
-    /// <paramref name="toAck"/> whatever it shows, since it has an input to acknowledge.
+    /// The sim commands, a frame for every device showing a changed parameter or a page in
+    /// <paramref name="changedPages"/>, and one for <paramref name="toAck"/> whatever it shows,
+    /// since it has an input to acknowledge.
     /// </summary>
-    private PanelEffects Effects(IReadOnlyList<SimCommand> sim, IReadOnlyCollection<ParameterId> changed, DeviceView? toAck = null)
+    private PanelEffects Effects(
+        IReadOnlyList<SimCommand> sim,
+        IReadOnlyCollection<ParameterId> changed,
+        DeviceView? toAck = null,
+        IReadOnlySet<string>? changedPages = null)
     {
         List<DeviceFrame> frames = [];
         foreach (DeviceView view in _devices.Values)
         {
-            if (view == toAck || view.Pages?.Current.Fields.Any(changed.Contains) == true)
+            if (view == toAck
+                || view.Pages?.Current.Fields.Any(changed.Contains) == true
+                || (view.Pages is { } pages && changedPages?.Contains(pages.Current.Id) == true))
             {
                 frames.Add(new DeviceFrame(view.Id, Render(view)));
             }
@@ -379,7 +439,7 @@ public sealed class PanelEngine : IPanelContext
         return new DisplayFrame(
             ++view.Revision,
             _sim,
-            new PageDescriptor(page.Id, page.Title, page.Layout, pages.Index, pages.Count),
+            new PageDescriptor(page.Id, page.Title, page.Layout, pages.Index, pages.Count, _captions.GetValueOrDefault(page.Id)),
             fields,
             Notice: null,
             AckSequence: view.AckSequence);

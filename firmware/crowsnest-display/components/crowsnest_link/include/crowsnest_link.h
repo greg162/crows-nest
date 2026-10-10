@@ -79,6 +79,10 @@ typedef struct {
     cn_layout_t    layout;
     int16_t        page_index;
     int16_t        page_count;
+    /* A short line under the view, such as the transponder's mode; empty for none. Lit
+     * draws it bright, for something momentary such as IDENT. */
+    char           page_caption[CN_TITLE_MAX];
+    bool           caption_lit;
     uint8_t        field_count;
     cn_field_t     fields[CN_FIELDS_MAX];
 } cn_state_t;
