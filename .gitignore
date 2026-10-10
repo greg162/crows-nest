@@ -29,3 +29,6 @@ firmware/**/sdkconfig.old
 *.swp
 Thumbs.db
 desktop.ini
+
+# ---- Media kit build ----
+.venv-media/

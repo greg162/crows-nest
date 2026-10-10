@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Crowsnest logo">
+<title>Crowsnest logo</title>
+<g transform="scale(3.125)"><rect width="32" height="32" rx="6" fill="#000000"/>
+<rect x="3" y="3" width="26" height="26" rx="3" fill="none" stroke="#F2F2F2" stroke-width="2"/>
+<g fill="#F2F2F2">
+<rect x="14" y="5" width="3" height="23"/>
+<rect x="6" y="13" width="19" height="3"/>
+<path d="M8 18 L23 18 L21 22 L10 22 Z"/></g>
+<path d="M19 7 L26 9 L19 11 Z" fill="#35E05B"/>
+</g>
+</svg>

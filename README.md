@@ -1,7 +1,14 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/logo/png/crowsnest-stacked.png">
+    <img src="media/logo/png/crowsnest-stacked-light.png" alt="Crowsnest" width="240">
+  </picture>
+</p>
+
 # Crowsnest
 
-A COM radio panel for Microsoft Flight Simulator, built on the Elecrow CrowPanel
-2.1" ESP32 Rotary Display.
+Cockpit panels for Microsoft Flight Simulator: COM, NAV and transponder radios on Elecrow
+CrowPanel 2.1" ESP32 rotary displays, driven by a Windows tray app over SimConnect.
 
 See [`crowsnest-technical-spec.md`](crowsnest-technical-spec.md) for the full design.
 
@@ -27,12 +34,15 @@ generates hundreds of megabytes of build output that has no business syncing.
 | ESP-IDF | 6.1 via EIM | Machine-level, not project-scoped. §9.3 |
 | USB-UART bridge drivers | — | `eim install-drivers`. Not required for the CrowPanel itself (native USB-Serial/JTAG, §9.6 F4) but needed for other boards and programming adapters |
 
-## Build
+## Build and run
 
 ```
 dotnet build host/Crowsnest.slnx
 dotnet test  host/Crowsnest.slnx
+dotnet run --project host/src/Crowsnest.Tray
 ```
+
+The tray app and DevConsole share a single-instance guard: run one or the other, never both.
 
 .NET 10 emits the XML solution format (`.slnx`) rather than `.sln`.
 
@@ -46,16 +56,20 @@ host/                      the Windows side: Crowsnest.slnx, Directory.Build.pro
     Crowsnest.Sim/           net10.0-windows  -> Core, SimConnect
     Crowsnest.Device/        net10.0-windows  -> Core
     Crowsnest.Host/          net10.0-windows  -> Core, Sim, Device
+    Crowsnest.Tray/          net10.0-windows  -> Host; the app (Crowsnest.exe): tray icon, settings, diagnostics
   tools/
-    Crowsnest.DevConsole/         runs the host headless, until the tray app exists
+    Crowsnest.DevConsole/         runs the host headless, with its log in the console
     Crowsnest.DeviceSimulator/    the host against a fake sim and a simulated device
   tests/
     Crowsnest.Core.Tests/    mirrors the Core folder structure exactly
     Crowsnest.Device.Tests/
     Crowsnest.Sim.Tests/
     Crowsnest.Host.Tests/    settings file, and the bridge end to end on simulated USB
+    Crowsnest.Tray.Tests/    the settings and diagnostics view models
+    protocol-corpus/         malformed wire lines the device parser must survive
 firmware/
   crowsnest-display/       ESP-IDF 6.1 + LVGL 9
+media/                     logo, app icon, DM Sans, colours: the brand kit (see its README)
 ```
 
 **The dependency rule.** `Core` references nothing but the BCL. Adapters (`Sim`,
@@ -68,13 +82,20 @@ rule that erodes quietly under deadline pressure.
 
 ### Not yet created
 
-`Crowsnest.Tray` and `Crowsnest.Installer` are Phase 4 and deliberately absent.
-The WiX v5 template pack is not installed (`dotnet new install WixToolset.Templates`).
+`Crowsnest.Installer` (WiX v5, phase 4). The WiX v5 template pack is not installed
+(`dotnet new install WixToolset.Templates`).
 
 ## Status
 
-Phases 0–3 are done: the host drives real CrowPanels against MSFS 2024 over SimConnect.
-COM 1, COM 2 and NAV 1 ship as panel modules (`host/src/Crowsnest.Core/Panels/`, see its
-README for adding one), and each board shows the panels assigned to it in
-`%LOCALAPPDATA%\Crowsnest\settings.json`. Next: the tray app and installer (phase 4).
-See `crowsnest-technical-spec.md` §13 for the phases.
+Phases 0–3 are done, and phase 4 is under way. The host drives several CrowPanels at once
+against MSFS 2024 over SimConnect. Three panels ship as modules in
+`host/src/Crowsnest.Core/Panels/` (its README covers adding one):
+
+- **COM**: COM 1 and COM 2, active and standby, tap to swap
+- **NAV**: NAV 1 and NAV 2
+- **Transponder**: the squawk code, tap for IDENT, with the mode shown under it
+
+Each board shows one panel, chosen in the tray app's settings window and saved to
+`%LOCALAPPDATA%\Crowsnest\settings.json`. The tray app also has a diagnostics window: link
+stats for each board and the recent log. Next: the installer, then firmware updates over the
+link from the tray (spec §6.3). See `crowsnest-technical-spec.md` §13 for the phases.
