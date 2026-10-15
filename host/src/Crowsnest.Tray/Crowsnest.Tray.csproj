@@ -14,6 +14,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -21,6 +22,8 @@
     <!-- Crowsnest.exe in Task Manager and the Run key. -->
     <AssemblyName>Crowsnest</AssemblyName>
     <RootNamespace>Crowsnest.Tray</RootNamespace>
+    <!-- Explorer, the taskbar and Add/Remove Programs. The tray icon itself is drawn in TrayIconController. -->
+    <ApplicationIcon>..\..\..\media\icon\crowsnest.ico</ApplicationIcon>
     <!-- WPF looks up the en-US culture to lay out any element (a menu is enough), and invariant
          mode has no cultures, so it crashes. App sets the invariant culture instead, which keeps
          the host formatting as it does everywhere else. -->
