@@ -92,6 +92,14 @@ backgrounds.
 preview. Its tagline, "Cockpit panels for Microsoft Flight Simulator", is a placeholder until
 there's a settled one.
 
+## Panel waiting screen
+
+`panel/crowsnest-waiting.png` is the stacked logo as the panels draw it while they wait for
+the app: 198 × 173 on black, with the mark at 128 px (4 px a grid cell, so it stays sharp).
+The build also writes it into the firmware as an LVGL image,
+`firmware/crowsnest-display/components/crowsnest_ui/images/ui_logo.c`. Reflash a panel
+to see a change.
+
 ## Rebuilding
 
 From the repository root:

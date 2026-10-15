@@ -3,6 +3,7 @@ idf_component_register(
          "ui_frame.c"
          "ui_value.c"
          "fonts/ui_font_value_72.c"
+         "images/ui_logo.c"
          "views/framed_value.c"
          "views/radio_pair.c"
          "views/value_stack.c"

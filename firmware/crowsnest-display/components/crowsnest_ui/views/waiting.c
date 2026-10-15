@@ -4,12 +4,17 @@
  * It names the panel by the last six characters of its hardware id: enough to match a
  * panel against a settings entry, short enough to read across a cockpit (spec §6.2). That
  * is how you tell five identical black discs apart without unplugging them one at a time.
+ *
+ * Above the id, the stacked logo from the media kit: images/ui_logo.c, made by
+ * media/tools/build_media.py.
  */
 
 #include <stdio.h>
 #include <string.h>
 
 #include "ui_view.h"
+
+LV_IMAGE_DECLARE(ui_logo);
 
 static lv_obj_t *s_root;
 static lv_obj_t *s_id;
@@ -21,11 +26,8 @@ lv_obj_t *waiting_create(lv_obj_t *screen)
     lv_obj_set_flex_align(s_root, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(s_root, 14, 0);
 
-    lv_obj_t *name = lv_label_create(s_root);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_28, 0);
-    lv_obj_set_style_text_color(name, UI_COLOUR_VALUE, 0);
-    lv_obj_set_style_text_letter_space(name, 2, 0);
-    lv_label_set_text(name, "CROWSNEST");
+    lv_obj_t *logo = lv_image_create(s_root);
+    lv_image_set_src(logo, &ui_logo);
 
     lv_obj_t *box = ui_container(s_root);
     lv_obj_set_style_border_color(box, UI_COLOUR_DIM, 0);
