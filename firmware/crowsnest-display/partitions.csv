@@ -1,5 +1,6 @@
-# Two OTA slots, so a firmware update over the link can fall back (spec §6.3).
-# 16 MB flash (spec §9.5) leaves room for both app images with plenty spare.
+# Two OTA slots, kept for a firmware update over the link should Wi-Fi ever come (spec §6.3).
+# Today the flasher writes ota_0 by cable and ota_1 is unused. 16 MB flash (spec §9.5) leaves
+# room for both app images with plenty spare.
 # Name,     Type, SubType,  Offset,   Size
 nvs,        data, nvs,      0x9000,   0x6000
 otadata,    data, ota,      0xf000,   0x2000

@@ -60,6 +60,11 @@ kept on uninstall.
 
 .NET 10 emits the XML solution format (`.slnx`) rather than `.sln`.
 
+Firmware goes on the boards with the flasher: build it (`idf.py build` in
+`firmware/crowsnest-display`), then double-click `flasher/Flash-Crowsnest.cmd` and pick a board.
+It needs no ESP-IDF of its own, so the same folder, zipped with a firmware image, is what
+other people use. See `flasher/README.md`.
+
 ## Layout
 
 ```
@@ -84,6 +89,7 @@ host/                      the Windows side: Crowsnest.slnx, Directory.Build.pro
     protocol-corpus/         malformed wire lines the device parser must survive
 firmware/
   crowsnest-display/       ESP-IDF 6.1 + LVGL 9
+flasher/                   puts firmware on the boards with esptool (see its README)
 media/                     logo, app icon, DM Sans, colours: the brand kit (see its README)
 ```
 
@@ -107,8 +113,8 @@ against MSFS 2024 over SimConnect. Three panels ship as modules in
 
 Each board shows one panel, chosen in the tray app's settings window and saved to
 `%LOCALAPPDATA%\Crowsnest\settings.json`. The tray app also has a diagnostics window: link
-stats for each board and the recent log, and a per-user MSI installer. Next: firmware updates
-over the link from the tray (spec §6.3). See `crowsnest-technical-spec.md` §13 for the phases.
+stats for each board and the recent log. It ships as a per-user MSI, and the flasher puts
+firmware on the boards (spec §6.3). See `crowsnest-technical-spec.md` §13 for the phases.
 
 ## Licence
 

@@ -15,5 +15,9 @@ if(NOT DEFINED SDKCONFIG_DEFAULTS)
     set(SDKCONFIG_DEFAULTS "sdkconfig.defaults;sdkconfig.defaults.${CROWSNEST_BOARD}")
 endif()
 
+# The firmware version, the one place it is set. ESP-IDF stores it in the image's app
+# header, where the firmware reads it for its hello and the flasher reads it from the .bin.
+set(PROJECT_VER "0.4.3")
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(crowsnest-display)

@@ -953,29 +953,25 @@ Each device keeps its own `PageNavigator` — devices navigate independently eve
 
 The tray's notification for an unassigned device was added 2026-10-05 (§8).
 
-### 6.3 Firmware updates over the link
+### 6.3 Firmware updates: the flasher, not over the link
 
-Detecting devices and offering to update them is the right call, and it is worth more here than with one device — nobody wants to flash five boards by hand. But do it **over the existing protocol**, not by shelling out to `esptool`.
+**Decided 2026-10-15: firmware goes on with esptool, from a PowerShell flasher (`flasher/`), for a new board and for every update.** The earlier plan was an update over the link (`ota_begin` / `ota_chunk` / `ota_commit` frames into the inactive OTA slot, with ESP-IDF rollback). None of it was built. Greg asked whether something simpler would do, and the reasons for the link had mostly gone:
 
-```json
-{"v":2,"t":"ota_begin","size":1843200,"sha256":"9f2c...","version":"1.1.0"}
-{"v":2,"t":"ota_chunk","seq":0,"data":"<base64>"}
-{"v":2,"t":"ota_commit"}
-{"v":2,"t":"ota_status","state":"writing","pct":42}
-```
+- **The download-mode worry was about bridge boards.** Entering download mode through a USB-UART bridge's DTR/RTS circuit is the fragile part. This board is native USB-Serial/JTAG (§9.6 F4), where esptool resets the chip into download mode itself; `idf.py flash` never failed on it.
+- **The flasher is needed anyway.** A blank or factory board has no Crowsnest firmware to talk to, so an update over the link could never be the first install; the old plan already kept an esptool path for that.
+- **The failure mode is fine.** Download mode is in the S3's ROM, so a half-written flash is fixed by flashing again, at worst holding BOOT.
+- **The GPL question went away.** Crowsnest is MIT, and the flasher downloads Espressif's esptool from its GitHub release at run time; nothing GPL ships with the app.
+- **Cost.** OTA meant firmware frames, rollback (which needs a new bootloader, so one cable flash anyway), a host updater, tray UI and tests, several sessions, for a step simmers do rarely.
 
-The firmware writes into the inactive OTA partition, verifies the hash, marks it bootable and reboots; ESP-IDF's rollback support reverts automatically if the new image fails to check in. The 16 MB flash holds two OTA slots comfortably.
+What remains true: an update over the link is still the way to go if Wi-Fi (phase 7) ever arrives, and the two OTA slots in `partitions.csv` are kept for it (3 MB of 16 MB; changing the table gains nothing).
 
-Why this rather than driving `esptool`:
+The flasher (`flasher/Flash-Crowsnest.cmd`, which runs `Flash-Crowsnest.ps1` with the execution policy bypassed; Windows PowerShell 5.1 or 7):
 
-- **No bootloader gymnastics.** Entering download mode via a USB-UART bridge depends on the DTR/RTS auto-reset circuit behaving, which is board-specific and a common source of "works on my desk" bugs. OTA sidesteps it entirely.
-- **Transport-agnostic.** The same code path updates a device over USB today and over Wi-Fi in phase 7. An esptool-based flow only ever works over serial.
-- **No GPL entanglement.** esptool is GPL-2.0, which is a live question if Crowsnest ships as a signed closed-source installer. Worth resolving before it becomes a dependency rather than after.
-- **Better failure mode.** A half-written OTA partition boots the old firmware. A half-written flash via esptool bricks the device until someone finds the BOOT button.
-
-Keep an esptool path documented for initial provisioning of a blank board, where there is no Crowsnest firmware to talk to. That is a one-time, per-board operation and a reasonable place to require a manual step.
-
-Update flow in the tray: on connect, compare `DeviceCapabilities.FirmwareVersion` against the version bundled with the installed app; if it is older, offer a single "Update all devices" action that walks the roster sequentially. Never update in parallel — a brown-out during a simultaneous five-panel flash is exactly the failure the hub sizing note is warning about.
+- **esptool 5.3.1**, the version ESP-IDF 6.1 uses with these boards: the standalone Windows build, downloaded once into `%LOCALAPPDATA%\Crowsnest\esptool.3.1` and checked against the release's SHA-256. No ESP-IDF or Python needed.
+- **One full image**, `crowsnest-display-<version>.bin` (bootloader, partition table, OTA data, app), written at 0x0. The flasher reads the version and project name from the app's `esp_app_desc_t` at 0x20000 + 0x20 and refuses anything else. The version is `PROJECT_VER` in the firmware's `CMakeLists.txt`, which the firmware also reads for its hello (fw 0.4.3; it was a `#define`).
+- **The image** comes from beside the script (highest version), or, in the repo, is joined from the last build's `flash_args`.
+- **Boards** are found as the `VID_303A&PID_1001` serial interfaces (`MI_00`); the parent USB device's serial number is the MAC, whose last six characters are the id the waiting screen shows ("PANEL dccc6c").
+- **Crowsnest is closed** first, because it holds the ports, and started again after. Boards are flashed **one at a time** (see the hub risk in §14).
 
 ## 7. Crowsnest.SimConnect — the SimConnect library
 
@@ -1399,7 +1395,7 @@ The argument in the table above stops at the C# boundary, which leaves the firmw
 
 **What cannot be host-tested, and should not be faked.** `crowsnest_input` is the PCNT peripheral and an I²C expander read; `bsp_crowpanel_21_rotary` is a panel init sequence and RGB timings. Mocking either tests the mock. These are covered by the tier-two smoke test and by hand — which is acceptable precisely because they are the two components a board port is expected to replace anyway.
 
-**The smoke test earns its place at the OTA boundary.** A `pytest-embedded` test that flashes a build, waits for the `hello` frame and asserts on `DeviceCapabilities` is the cheapest possible guard against shipping an image that boots but never speaks. Given §6.3 pushes firmware over the same link the test uses, that guard runs against the exact path a user's update takes.
+**The smoke test earns its place at the release boundary.** A `pytest-embedded` test that flashes a build, waits for the `hello` frame and asserts on `DeviceCapabilities` is the cheapest possible guard against shipping an image that boots but never speaks. It flashes with esptool, the same path the flasher (§6.3) takes on a user's board.
 
 
 ---
@@ -1430,7 +1426,7 @@ Firmware flashing stays out of the installer for v1 — ship the `.bin` and a `e
 | **4 — Ship v1** | `Crowsnest.Tray` + `Crowsnest.Installer` | Signed MSI installs, autostarts, appears in Add/Remove Programs, survives sim restart and cable unplug |
 | **5 — Radios** | NAV 1, COM 2, NAV 2, page navigation | One new `NavPanelModule` + one line in `PanelCatalog`. **If this phase requires changes outside `Panels/Nav/`, the §5 abstraction failed and should be revisited before phase 6.** NAV 2 added 2026-10-08 with JSON in `Panels/Nav/` only (parameters, page, demo values); not yet tried against the sim |
 | **6 — Autopilot** | Altitude, heading, vertical speed, airspeed | Exercises `SignedLinearGrid`, `WrappingGrid`, and three-level cursors |
-| **6.5 — Multi-device** | `IDeviceManager`, role assignment UI, OTA update flow | Three devices on one hub, each assigned different pages, sharing tuning state; all three update from one tray action |
+| **6.5 — Multi-device** | `IDeviceManager`, role assignment UI, firmware flasher | Three devices on one hub, each assigned different pages, sharing tuning state; all three flashed from one run of the flasher (§6.3: the flasher replaced the update-over-the-link flow, 2026-10-15) |
 | **7 — Portability** | Second board port + Wi-Fi transport | A board Crowsnest was not designed against runs the unmodified `crowsnest_ui` |
 
 **Phase 1 demo, 2026-09-27.** `host/tools/Crowsnest.DeviceSimulator` now runs the real host stack: `PanelCoordinator` with `DefaultParameters.Load()`, a `FakeParameterGateway` (`Crowsnest.Sim`) on one side and `DeviceConnection` → NDJSON codec → `LoopbackTransport` → `SimulatedDevice` on the other. Interactive by default (arrows turn, space cycles the cursor, enter pages, `t` swaps; `s` flips the cockpit spacing switch, `k` turns the cockpit knob, `i` makes the sim ignore writes); `--script` plays a fixed tour and exits; `--selftest` is the old link self-test. `FakeParameterGateway` models what the spikes saw: writes read back after 15 ms (returning at once, like a transmit), `COM_STBY_RADIO_SWAP`, and the spacing switch snapping both COM 1 values when going to 25 kHz; it does not police spacing on writes, since MSFS does not. Not yet: `Crowsnest.Host` composing the same pieces with the real SimConnect gateway, which is phase 2.
@@ -1476,9 +1472,9 @@ The driver step is called out separately because it is the only prerequisite who
 | **I²C contention between touch reads and knob-button polling** — an open esp-bsp issue causes aborts on the M5Dial, and the CrowPanel shares the hazard | Medium | Medium | Single I²C mutex from day one |
 | RGB panel tearing under Wi-Fi load | Medium | Low in v1 | v1 is serial-only; measure before committing to Wi-Fi in phase 7 |
 | `SimConnect.dll` redistribution terms | Low | High if wrong | Read the MSFS SDK licence before bundling. Fallback is to require an SDK install or locate the DLL at runtime |
-| **Hub cannot supply 5 A** — bus-powered hubs give 500–900 mA/port and many "powered" hubs ship a 2 A adapter | High if unspecified | High — brown-outs mid-flash | Specify a 40 W+ hub with ≥1 A per port; never OTA more than one device at a time |
+| **Hub cannot supply 5 A** — bus-powered hubs give 500–900 mA/port and many "powered" hubs ship a 2 A adapter | High if unspecified | High — brown-outs mid-flash | Specify a 40 W+ hub with ≥1 A per port; never flash more than one device at a time |
 | **Windows renumbers COM ports** across reboots with five identical VID/PID devices | Certain | High if port-keyed | Identity is the eFuse MAC from the `hello` frame; nothing keys off a port name |
-| esptool's GPL-2.0 licence versus a closed-source installer | Medium | Medium | OTA over the existing link avoids the dependency; resolve before adopting esptool |
+| esptool's GPL-2.0 licence versus a closed-source installer — *retired* | — | — | **Retired 2026-10-15:** Crowsnest is MIT, and the flasher downloads esptool from Espressif at run time rather than shipping it (§6.3) |
 | Unsigned installer trips SmartScreen | High | Low | Budget for a signing certificate before public release |
 
 ## Appendix A — SimConnect reference

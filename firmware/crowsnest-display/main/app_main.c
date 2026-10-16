@@ -22,6 +22,7 @@
 #include "crowsnest_link.h"
 #include "crowsnest_ui.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "esp_mac.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -31,7 +32,8 @@
 
 static const char *TAG = "crowsnest";
 
-#define FIRMWARE_VERSION "0.4.2"
+/* PROJECT_VER in the top-level CMakeLists.txt. */
+#define FIRMWARE_VERSION (esp_app_get_description()->version)
 #define DEVICE_TYPE "crowpanel-2.1-rotary"
 
 #define INPUT_POLL_MS 20
