@@ -1,0 +1,186 @@
+<!--
+  Crowsnest's installer (spec D5). Per user, so it needs no administrator: the app goes to
+  %LOCALAPPDATA%\Programs\Crowsnest unless the user picks another folder, with a Start menu
+  shortcut, and starts when the install finishes. It does not start with Windows until the user turns that on in the tray menu.
+
+  The UpgradeCode ties every version together: never change it. A newer MSI replaces the
+  installed version; an older one refuses to install over a newer.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Crowsnest"
+           Manufacturer="Crowsnest"
+           Version="$(Version)"
+           UpgradeCode="AB472C2B-DC52-4BA4-8886-C3076E252B1D"
+           Scope="perUser">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Crowsnest is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Add/Remove Programs. There are no features to choose, so no Modify button. -->
+    <Icon Id="crowsnest.ico" SourceFile="$(MediaDir)icon\crowsnest.ico" />
+    <Property Id="ARPPRODUCTICON" Value="crowsnest.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/greg162/crows-nest" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Crowsnest" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- The folder the user chose last time, so an upgrade lands in the same place. -->
+    <Property Id="INSTALLFOLDER">
+      <RegistrySearch Id="PreviousInstallFolder" Root="HKCU" Key="Software\Crowsnest\Installer" Name="InstallFolder" Type="raw" />
+    </Property>
+
+    <ComponentGroup Id="App" Directory="INSTALLFOLDER">
+      <!-- Authored on its own so the launch at the end can name it. -->
+      <Component Id="CrowsnestExe">
+        <File Id="CrowsnestExe" Source="$(PublishDir)Crowsnest.exe" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+      </Component>
+      <!-- MSI wants a per-user shortcut's component keyed on an HKCU value, not a file. -->
+      <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="Crowsnest"
+                  Description="Cockpit panels for Microsoft Flight Simulator"
+                  Target="[INSTALLFOLDER]Crowsnest.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\Crowsnest\Installer" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\Crowsnest\Installer" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" />
+      </Component>
+      <Files Include="$(PublishDir)**">
+        <Exclude Files="$(PublishDir)Crowsnest.exe" />
+        <Exclude Files="$(PublishDir)**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="App" />
+    </Feature>
+
+    <!-- The wizard: welcome, the MIT licence, the folder, install, then our own finish page. -->
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_Crowsnest" />
+
+    <!-- A running copy holds its files open, and its single-instance guard would stop the new
+         one starting, so close it first: politely, then by force. Settings are saved as they
+         change, so nothing is lost. -->
+    <util:CloseApplication Id="CloseCrowsnest"
+                           Target="Crowsnest.exe"
+                           CloseMessage="yes"
+                           TerminateProcess="1"
+                           RebootPrompt="no" />
+
+    <!-- Start the app when the install finishes, unless it was a silent install (/qn). -->
+    <SetProperty Id="WixShellExecTarget" Value="[#CrowsnestExe]" Before="LaunchCrowsnest" Sequence="execute" />
+    <CustomAction Id="LaunchCrowsnest"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <!-- "Start with Windows" (StartupRegistration) is a value the app writes, not the
+         installer, so remove it on uninstall. reg.exe fails when the value isn't there,
+         which is fine. Not on an upgrade: the new version keeps the same path. -->
+    <SetProperty Id="RemoveStartupValue"
+                 Value="&quot;[System64Folder]reg.exe&quot; delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Crowsnest /f"
+                 Before="RemoveStartupValue"
+                 Sequence="execute" />
+    <CustomAction Id="RemoveStartupValue"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="LaunchCrowsnest" After="InstallFinalize" Condition="NOT Installed AND UILevel &gt; 2" />
+      <Custom Action="RemoveStartupValue" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+  </Package>
+
+  <!--
+    WiX's WixUI_InstallDir, copied so the last page can be our own: WiX's ExitDialog can't
+    be replaced. Everything else is wired as in the original.
+  -->
+  <Fragment>
+    <UI Id="WixUI_Crowsnest">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+
+      <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath_X64" Order="3" Condition="NOT WIXUI_DONTVALIDATEPATH" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="4" Condition="NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="LicenseAgreementDlg" Control="Print" Event="DoAction" Value="WixUIPrintEula_X64" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="LicenseAccepted = &quot;1&quot;" />
+
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="WixUIValidatePath_X64" Order="2" Condition="NOT WIXUI_DONTVALIDATEPATH" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidDirDlg" Order="3" Condition="NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4" Condition="WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID=&quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <!-- The finish page, laid out like WiX's ExitDialog. Crowsnest never needs a restart,
+           so the restart question is a joke after an old Half-Life mod installer: both
+           answers just close the wizard. Only on an install, not on a repair or removal. -->
+      <Property Id="CROWSNEST_RESTART" Value="NoPoint" />
+      <Dialog Id="CrowsnestExitDlg" Width="370" Height="270" Title="!(loc.ExitDialog_Title)">
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="!(loc.ExitDialogBitmap)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="!(loc.ExitDialogTitle)" />
+        <Control Id="Description" Type="Text" X="135" Y="70" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.ExitDialogDescription)" />
+        <Control Id="RestartQuestion" Type="Text" X="135" Y="120" Width="220" Height="20" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="Setup would like to restart your PC." ShowCondition="NOT Installed" />
+        <Control Id="RestartChoice" Type="RadioButtonGroup" X="135" Y="142" Width="220" Height="34" Property="CROWSNEST_RESTART" Hidden="yes" ShowCondition="NOT Installed">
+          <RadioButtonGroup Property="CROWSNEST_RESTART">
+            <RadioButton Value="Stupid" X="0" Y="0" Width="220" Height="15" Text="I am stupid, restart my PC." />
+            <RadioButton Value="NoPoint" X="0" Y="18" Width="220" Height="15" Text="Don't restart my PC, there is no point." />
+          </RadioButtonGroup>
+        </Control>
+      </Dialog>
+      <InstallUISequence>
+        <Show Dialog="CrowsnestExitDlg" OnExit="success" />
+      </InstallUISequence>
+      <AdminUISequence>
+        <Show Dialog="CrowsnestExitDlg" OnExit="success" />
+      </AdminUISequence>
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

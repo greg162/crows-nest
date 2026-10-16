@@ -12,6 +12,9 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The app is English only, so don't ship the translated framework messages (WPF
+         alone brings 13 languages). -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 

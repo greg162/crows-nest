@@ -44,6 +44,20 @@ dotnet run --project host/src/Crowsnest.Tray
 
 The tray app and DevConsole share a single-instance guard: run one or the other, never both.
 
+The installer is built on its own, not with the solution. It publishes the tray app with the
+.NET runtime included, then packs it into `host/src/Crowsnest.Installer/bin/Release/Crowsnest-<version>.msi`
+(about 50 MB). The version comes from `host/Directory.Build.props`.
+
+```
+dotnet build host/src/Crowsnest.Installer -c Release
+```
+
+It installs for the current user only, with no administrator prompt. The wizard shows the MIT
+licence, then asks for a folder (`%LOCALAPPDATA%\Programs\Crowsnest` by default; an upgrade
+reuses the last one). It adds a Start menu shortcut and starts the app when it finishes. A newer
+MSI upgrades in place. Settings and logs in `%LOCALAPPDATA%\Crowsnest` are
+kept on uninstall.
+
 .NET 10 emits the XML solution format (`.slnx`) rather than `.sln`.
 
 ## Layout
@@ -57,6 +71,7 @@ host/                      the Windows side: Crowsnest.slnx, Directory.Build.pro
     Crowsnest.Device/        net10.0-windows  -> Core
     Crowsnest.Host/          net10.0-windows  -> Core, Sim, Device
     Crowsnest.Tray/          net10.0-windows  -> Host; the app (Crowsnest.exe): tray icon, settings, diagnostics
+    Crowsnest.Installer/     WiX v5           the MSI; not in the solution (see Build and run)
   tools/
     Crowsnest.DevConsole/         runs the host headless, with its log in the console
     Crowsnest.DeviceSimulator/    the host against a fake sim and a simulated device
@@ -80,11 +95,6 @@ rule that erodes quietly under deadline pressure.
 
 `Crowsnest.SimConnect` deliberately has no reference to `Core`.
 
-### Not yet created
-
-`Crowsnest.Installer` (WiX v5, phase 4). The WiX v5 template pack is not installed
-(`dotnet new install WixToolset.Templates`).
-
 ## Status
 
 Phases 0–3 are done, and phase 4 is under way. The host drives several CrowPanels at once
@@ -97,5 +107,11 @@ against MSFS 2024 over SimConnect. Three panels ship as modules in
 
 Each board shows one panel, chosen in the tray app's settings window and saved to
 `%LOCALAPPDATA%\Crowsnest\settings.json`. The tray app also has a diagnostics window: link
-stats for each board and the recent log. Next: the installer, then firmware updates over the
-link from the tray (spec §6.3). See `crowsnest-technical-spec.md` §13 for the phases.
+stats for each board and the recent log, and a per-user MSI installer. Next: firmware updates
+over the link from the tray (spec §6.3). See `crowsnest-technical-spec.md` §13 for the phases.
+
+## Licence
+
+MIT, see `LICENSE`. The installer also ships `SimConnect.dll` and
+`Microsoft.FlightSimulator.SimConnect.dll` from the Microsoft Flight Simulator SDK; they belong
+to Microsoft and are not covered by the MIT licence.

@@ -1,0 +1,42 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!-- The MSI (spec D5). Not in Crowsnest.slnx: it publishes the tray self-contained,
+       about 150 MB, which an everyday build has no use for. Build it on its own:
+
+         dotnet build host\src\Crowsnest.Installer -c Release
+
+       The MSI lands in bin\Release\. -->
+
+  <PropertyGroup>
+    <OutputName>Crowsnest-$(Version)</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <TrayProject>..\Crowsnest.Tray\Crowsnest.Tray.csproj</TrayProject>
+    <TrayPublishDir>$(MSBuildProjectDirectory)\obj\publish\$(Configuration)\</TrayPublishDir>
+    <DefineConstants>Version=$(Version);PublishDir=$(TrayPublishDir);MediaDir=$(MSBuildProjectDirectory)\..\..\..\media\</DefineConstants>
+    <!-- A per-user package puts its files in the user's profile, which these ICEs only accept
+         with a registry key path per component and a RemoveFolder per directory. Uninstall
+         removes every file either way. -->
+    <SuppressIces>ICE38;ICE64;ICE91</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+  <!-- The app with the .NET runtime beside it (self-contained), so nothing else needs
+       installing first. A clean publish folder each time, so a file the app no longer ships
+       can't ride along. -->
+  <Target Name="PublishTray" BeforeTargets="BeforeBuild">
+    <RemoveDir Directories="$(TrayPublishDir)" />
+    <Exec Command="dotnet publish &quot;$(TrayProject)&quot; -c $(Configuration) --self-contained -p:Version=$(Version) -o &quot;$(TrayPublishDir.TrimEnd('\'))&quot; -nologo -v q" />
+    <!-- WiX skips the MSI when no input is newer than its last build, but publish keeps the
+         files' original dates, so a version set on the command line came out as no MSI at
+         all. Forget the last build: the publish above already costs more than the link. -->
+    <ItemGroup>
+      <_LastBindTracking Include="$(IntermediateOutputPath)$(BindTrackingFilePrefix)*" />
+    </ItemGroup>
+    <Delete Files="@(_LastBindTracking)" />
+  </Target>
+
+</Project>
