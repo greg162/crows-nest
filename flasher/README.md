@@ -40,4 +40,9 @@ development: `idf.py build`, then run the flasher.
 
 To hand the flasher to someone else, zip this folder with that image beside the script.
 
+The installer ships this folder, with the image, as `flasher` beside `Crowsnest.exe`; the tray's
+**Update firmware...** opens it, and says so when a board's firmware is older than that image.
+The installer's build gets the image with `-ExportImage <folder>`, which copies the image the
+flasher would use and fails if the firmware build is older than `PROJECT_VER`.
+
 The version is `PROJECT_VER` in `firmware/crowsnest-display/CMakeLists.txt`.

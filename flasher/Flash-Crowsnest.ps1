@@ -19,6 +19,11 @@
 .PARAMETER Port
     Flash these ports (COM4, COM5) or "all" without asking.
 
+.PARAMETER ExportImage
+    Flash nothing: copy the firmware image it would use into this folder. The installer's
+    build uses it to ship the image beside the flasher. From the repo, the firmware build has
+    to be of the version in CMakeLists.txt.
+
 .EXAMPLE
     .\Flash-Crowsnest.ps1
 
@@ -28,7 +33,8 @@
 [CmdletBinding()]
 param(
     [string]$Image,
-    [string[]]$Port
+    [string[]]$Port,
+    [string]$ExportImage
 )
 
 # Runs in Windows PowerShell 5.1 as well as PowerShell 7: most PCs only have 5.1.
@@ -53,6 +59,7 @@ $AppDescMagic = 0xABCD5432L   # L: a plain 0xABCD5432 is a negative Int32 in Pow
 $ProjectName = 'crowsnest-display'
 
 $RepoBuildDir = Join-Path $PSScriptRoot '..\firmware\crowsnest-display\build'
+$RepoCMakeLists = Join-Path $PSScriptRoot '..\firmware\crowsnest-display\CMakeLists.txt'
 
 function Write-Heading([string]$text) {
     Write-Host ''
@@ -219,6 +226,19 @@ Write-Host '--------------------------'
 
 $esptool = Get-Esptool
 $firmware = Find-Image $esptool
+if ($ExportImage) {
+    # A release must not ship an image from before the last version bump.
+    if ((Test-Path $RepoBuildDir) -and $firmware.Path.StartsWith((Resolve-Path $RepoBuildDir).Path)) {
+        $wanted = [regex]::Match((Get-Content -Raw $RepoCMakeLists), 'set\(PROJECT_VER "([^"]+)"\)').Groups[1].Value
+        if ($wanted -and $wanted -ne $firmware.Version) {
+            Stop-WithMessage "The firmware build is $($firmware.Version) but CMakeLists.txt says $wanted. Run idf.py build first."
+        }
+    }
+    New-Item -ItemType Directory -Force $ExportImage | Out-Null
+    Copy-Item $firmware.Path $ExportImage
+    Write-Host "Firmware $($firmware.Version) copied to $ExportImage"
+    exit 0
+}
 Write-Host ''
 Write-Host "Firmware $($firmware.Version)  ($(Split-Path $firmware.Path -Leaf))"
 

@@ -5,14 +5,17 @@
 
          dotnet build host\src\Crowsnest.Installer -c Release
 
-       The MSI lands in bin\Release\. -->
+       The MSI lands in bin\Release\. It ships the firmware flasher too, with the image from
+       the last firmware build (idf.py build first), or the one named by -p:FirmwareImage=. -->
 
   <PropertyGroup>
     <OutputName>Crowsnest-$(Version)</OutputName>
     <InstallerPlatform>x64</InstallerPlatform>
     <TrayProject>..\Crowsnest.Tray\Crowsnest.Tray.csproj</TrayProject>
     <TrayPublishDir>$(MSBuildProjectDirectory)\obj\publish\$(Configuration)\</TrayPublishDir>
-    <DefineConstants>Version=$(Version);PublishDir=$(TrayPublishDir);MediaDir=$(MSBuildProjectDirectory)\..\..\..\media\</DefineConstants>
+    <FlasherDir>$(MSBuildProjectDirectory)\..\..\..\flasher\</FlasherDir>
+    <FirmwareDir>$(MSBuildProjectDirectory)\obj\firmware\$(Configuration)\</FirmwareDir>
+    <DefineConstants>Version=$(Version);PublishDir=$(TrayPublishDir);MediaDir=$(MSBuildProjectDirectory)\..\..\..\media\;FlasherDir=$(FlasherDir);FirmwareDir=$(FirmwareDir)</DefineConstants>
     <!-- A per-user package puts its files in the user's profile, which these ICEs only accept
          with a registry key path per component and a RemoveFolder per directory. Uninstall
          removes every file either way. -->
@@ -37,6 +40,17 @@
       <_LastBindTracking Include="$(IntermediateOutputPath)$(BindTrackingFilePrefix)*" />
     </ItemGroup>
     <Delete Files="@(_LastBindTracking)" />
+  </Target>
+
+  <!-- The firmware image for the flasher, put where Package.wxs takes it from by the flasher
+       itself, so it is the image the flasher would pick: it fails on a firmware build older
+       than the version in CMakeLists.txt. A clean folder, so only one image ships. -->
+  <Target Name="ExportFirmware" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <_FirmwareImageArg Condition="'$(FirmwareImage)' != ''">-Image &quot;$(FirmwareImage)&quot;</_FirmwareImageArg>
+    </PropertyGroup>
+    <RemoveDir Directories="$(FirmwareDir)" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(FlasherDir)Flash-Crowsnest.ps1&quot; $(_FirmwareImageArg) -ExportImage &quot;$(FirmwareDir.TrimEnd('\'))&quot;" />
   </Target>
 
 </Project>

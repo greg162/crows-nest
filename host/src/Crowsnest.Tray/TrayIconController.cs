@@ -20,7 +20,8 @@ namespace Crowsnest.Tray;
 /// <summary>
 /// The tray icon and its menu (spec §8). The icon's colour carries the status, the tooltip says
 /// which of sim and devices are up, and the menu lists each device and what it shows. A device
-/// with no panels raises a notification that opens the settings window at it (§6.2).
+/// with no panels raises a notification that opens the settings window at it (§6.2). A board
+/// with older firmware than the flasher beside the app raises one that opens the flasher.
 ///
 /// Health changes arrive on any thread; everything here runs on the dispatcher.
 /// </summary>
@@ -38,6 +39,7 @@ public sealed class TrayIconController : IDisposable
     private readonly SettingsStore _settings;
     private readonly StartupRegistration _startup;
     private readonly LogTail _logTail;
+    private readonly Flasher? _flasher;
     private readonly Dispatcher _dispatcher;
     private readonly TaskbarIcon _icon;
     private readonly ContextMenu _menu = new();
@@ -46,7 +48,8 @@ public sealed class TrayIconController : IDisposable
     private bool _refreshQueued;
     private SettingsWindow? _settingsWindow;
     private DiagnosticsWindow? _diagnosticsWindow;
-    private string? _notifiedDevice;
+    private Action? _notificationClicked;
+    private readonly HashSet<string> _toldOfFirmware = [];
 
     public TrayIconController(
         HealthSnapshotProvider health,
@@ -54,6 +57,7 @@ public sealed class TrayIconController : IDisposable
         SettingsStore settings,
         StartupRegistration startup,
         LogTail logTail,
+        Flasher? flasher,
         Dispatcher dispatcher)
     {
         _health = health;
@@ -61,6 +65,7 @@ public sealed class TrayIconController : IDisposable
         _settings = settings;
         _startup = startup;
         _logTail = logTail;
+        _flasher = flasher;
         _dispatcher = dispatcher;
 
         _icon = new TaskbarIcon
@@ -70,7 +75,7 @@ public sealed class TrayIconController : IDisposable
             NoLeftClickDelay = true,
         };
         _menu.Opened += (_, _) => BuildMenu(); // the Start with Windows tick is read afresh
-        _icon.TrayBalloonTipClicked += (_, _) => OpenSettings(_notifiedDevice);
+        _icon.TrayBalloonTipClicked += (_, _) => _notificationClicked?.Invoke();
 
         // Not efficiency mode, which ForceCreate turns on by default: Windows would throttle the
         // process, and with it the knob-to-sim loop.
@@ -129,6 +134,7 @@ public sealed class TrayIconController : IDisposable
         }
 
         _icon.ToolTipText = health.ToolTip;
+        TellOfOlderFirmware(health);
         if (_menu.IsOpen)
         {
             BuildMenu();
@@ -146,11 +152,22 @@ public sealed class TrayIconController : IDisposable
             _menu.Items.Add(Status(line));
         }
 
+        List<DeviceHealth> behind = BehindOnFirmware(health);
+        foreach (DeviceHealth device in behind)
+        {
+            _menu.Items.Add(Status($"{device.Identity.ShortId}: firmware {device.Identity.FirmwareVersion}, {_flasher!.FirmwareVersion} available"));
+        }
+
         _menu.Items.Add(new Separator());
         _menu.Items.Add(Item("Settings...", () => OpenSettings(null)));
         _menu.Items.Add(Item("Open settings file", OpenSettingsFile));
         _menu.Items.Add(Item("Diagnostics...", OpenDiagnostics));
         _menu.Items.Add(Item("Open logs folder", App.OpenLogsFolder));
+        if (_flasher is not null)
+        {
+            _menu.Items.Add(Item(behind.Count > 0 ? $"Update firmware to {_flasher.FirmwareVersion}..." : "Update firmware...", StartFlasher));
+        }
+
         MenuItem startup = Item("Start with Windows", ToggleStartup);
         startup.IsCheckable = true;
         startup.IsChecked = _startup.IsEnabled;
@@ -163,13 +180,50 @@ public sealed class TrayIconController : IDisposable
     {
         if (!_icon.IsDisposed)
         {
-            _notifiedDevice = device.Identity.HardwareId;
+            string hardwareId = device.Identity.HardwareId;
+            _notificationClicked = () => OpenSettings(hardwareId);
             _icon.ShowNotification(
                 $"Device {device.Identity.ShortId} has no panel",
                 "Click here to choose the panel it shows.",
                 NotificationIcon.Info);
         }
     });
+
+    /// <summary>The boards whose firmware is older than the flasher's image.</summary>
+    private List<DeviceHealth> BehindOnFirmware(HealthSnapshot health) =>
+        _flasher is null ? [] : [.. health.Devices.Where(d => _flasher.IsNewerThan(d.Identity.FirmwareVersion))];
+
+    /// <summary>
+    /// Once a run for each board behind on firmware. Not while it has no panel: that has a
+    /// notification of its own, and choosing a panel comes first.
+    /// </summary>
+    private void TellOfOlderFirmware(HealthSnapshot health)
+    {
+        List<DeviceHealth> untold = [.. BehindOnFirmware(health).Where(d => d.Assigned && _toldOfFirmware.Add(d.Identity.HardwareId))];
+        if (untold.Count == 0)
+        {
+            return;
+        }
+
+        foreach (DeviceHealth device in untold)
+        {
+            Log.Information(
+                "Device {Device} has firmware {Firmware}; the flasher has {Available}",
+                device.Identity.ShortId, device.Identity.FirmwareVersion, _flasher!.FirmwareVersion);
+        }
+
+        _notificationClicked = StartFlasher;
+        _icon.ShowNotification(
+            untold.Count == 1 ? $"Firmware {_flasher!.FirmwareVersion} for {untold[0].Name}" : $"Firmware {_flasher!.FirmwareVersion} for {untold.Count} boards",
+            untold.Count == 1 ? $"It has firmware {untold[0].Identity.FirmwareVersion}. Click here to update it." : "Click here to update them.",
+            NotificationIcon.Info);
+    }
+
+    private void StartFlasher()
+    {
+        Log.Information("Starting the firmware flasher, {Script}", _flasher!.Script);
+        _flasher.Start();
+    }
 
     private void ToggleStartup()
     {

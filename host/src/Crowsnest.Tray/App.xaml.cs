@@ -84,6 +84,7 @@ public partial class App : System.Windows.Application
                 _host.Services.GetRequiredService<SettingsStore>(),
                 new StartupRegistration(Environment.ProcessPath!),
                 _logTail,
+                Flasher.Find(AppContext.BaseDirectory),
                 Dispatcher);
         }
         catch (Exception error)

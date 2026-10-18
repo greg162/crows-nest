@@ -1,7 +1,8 @@
 <!--
   Crowsnest's installer (spec D5). Per user, so it needs no administrator: the app goes to
   %LOCALAPPDATA%\Programs\Crowsnest unless the user picks another folder, with a Start menu
-  shortcut, and starts when the install finishes. It does not start with Windows until the user turns that on in the tray menu.
+  shortcut, and starts when the install finishes. The firmware flasher and its image go in a
+  flasher folder beside the app, for the tray's Update firmware command. It does not start with Windows until the user turns that on in the tray menu.
 
   The UpgradeCode ties every version together: never change it. A newer MSI replaces the
   installed version; an older one refuses to install over a newer.
@@ -26,7 +27,9 @@
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
-        <Directory Id="INSTALLFOLDER" Name="Crowsnest" />
+        <Directory Id="INSTALLFOLDER" Name="Crowsnest">
+          <Directory Id="FLASHERFOLDER" Name="flasher" />
+        </Directory>
       </Directory>
     </StandardDirectory>
 
@@ -57,8 +60,16 @@
       </Files>
     </ComponentGroup>
 
+    <ComponentGroup Id="Flasher" Directory="FLASHERFOLDER">
+      <File Source="$(FlasherDir)Flash-Crowsnest.cmd" />
+      <File Source="$(FlasherDir)Flash-Crowsnest.ps1" />
+      <File Source="$(FlasherDir)README.md" />
+      <Files Include="$(FirmwareDir)*.bin" />
+    </ComponentGroup>
+
     <Feature Id="Main">
       <ComponentGroupRef Id="App" />
+      <ComponentGroupRef Id="Flasher" />
     </Feature>
 
     <!-- The wizard: welcome, the MIT licence, the folder, install, then our own finish page. -->
