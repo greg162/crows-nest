@@ -30,7 +30,7 @@
   <PropertyGroup>
     <Product>Crowsnest</Product>
     <Company>Crowsnest</Company>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
   </PropertyGroup>
 
 </Project>

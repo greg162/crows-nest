@@ -30,7 +30,7 @@ generates hundreds of megabytes of build output that has no business syncing.
 | Prerequisite | Version | Notes |
 |---|---|---|
 | .NET SDK | 10.0.100+ | Pinned in `global.json` with `latestFeature` roll-forward |
-| MSFS 2024 SDK | 12.2.0.0 | Supplies native x64 `SimConnect.dll`. Vendor into the repo, do not reference the SDK path |
+| MSFS 2024 SDK | 12.2.0.0 | Supplies `SimConnect.dll` and the managed wrapper. Set `MSFS2024_SDK` to its folder, with a trailing backslash (`C:\MSFS 2024 SDK\`). The DLLs are Microsoft's: they ship in the MSI but are never committed, so the host can't build without the SDK |
 | ESP-IDF | 6.1 via EIM | Machine-level, not project-scoped. §9.3 |
 | USB-UART bridge drivers | — | `eim install-drivers`. Not required for the CrowPanel itself (native USB-Serial/JTAG, §9.6 F4) but needed for other boards and programming adapters |
 
@@ -43,6 +43,22 @@ dotnet run --project host/src/Crowsnest.Tray
 ```
 
 The tray app and DevConsole share a single-instance guard: run one or the other, never both.
+
+## Releasing
+
+Releases are built on this PC, not by GitHub Actions: the host needs the MSFS SDK for the
+SimConnect DLLs, which the MSI ships but the repo never holds.
+
+1. Bump `Version` in `host/Directory.Build.props`; after a firmware change, bump `PROJECT_VER` in
+   `firmware/crowsnest-display/CMakeLists.txt` and `idf.py build`.
+2. Commit and push.
+3. `.	ools\Build-Release.ps1` (needs the GitHub CLI, logged in). It runs the tests, builds the
+   MSI and the flasher zip into `artifacts/release/<version>/`, and creates draft releases
+   `app-v<version>` (the MSI) and `firmware-v<version>` (the zip, when that firmware is new).
+4. Fill in "What's new" on GitHub and publish each draft.
+
+`-BuildOnly` builds the files without touching GitHub. The MSI is not code-signed (Windows
+SmartScreen warns on it; the release notes say how to get past that).
 
 The installer is built on its own, not with the solution. It publishes the tray app with the
 .NET runtime included, then packs it into `host/src/Crowsnest.Installer/bin/Release/Crowsnest-<version>.msi`
